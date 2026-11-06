@@ -28,19 +28,20 @@ const normalizeVariables = (variables: any[]): EggDefinition["variables"] => {
   }));
 };
 
+const normalizeDockerImages = (images: unknown): unknown[] => {
+  if (Array.isArray(images)) return images;
+  if (typeof images === "string") return [images];
+  if (images && typeof images === "object") return Object.values(images);
+  return [];
+};
+
 const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): EggDefinition | string => {
   const name = String(body.name || "").trim();
   const runtime = ["minecraft", "generic", "custom"].includes(body.runtime) ? body.runtime as EggDefinition["runtime"] : null;
   if (!name) return "Egg name is required.";
   if (!runtime) return "Egg runtime must be Minecraft, Generic, or Custom host process.";
 
-  const dockerImages = Array.isArray(body.dockerImages)
-    ? body.dockerImages
-    : Array.isArray(body.docker_images)
-      ? Object.values(body.docker_images)
-      : body.dockerImage || body.image
-        ? [body.dockerImage || body.image]
-        : [];
+  const dockerImages = normalizeDockerImages(body.dockerImages ?? body.docker_images ?? body.dockerImage ?? body.image);
   const type = String(body.type || body.serverType || (runtime === "minecraft" ? "paper" : "custom")).trim().toLowerCase();
   if (runtime === "generic" && !["nodejs", "python"].includes(type) && dockerImages.length === 0) {
     return "Generic egg requires at least one Docker image.";
@@ -63,7 +64,10 @@ const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): E
     type,
     dockerImages: dockerImages.map((image: unknown) => String(image).trim()).filter(Boolean),
     startup,
-    variables
+    variables,
+    ...(body.pterodactylJson && typeof body.pterodactylJson === "object" && !Array.isArray(body.pterodactylJson)
+      ? { pterodactylJson: body.pterodactylJson }
+      : {})
   };
 };
 
@@ -133,12 +137,14 @@ router.post("/nests/:nestId/import", async (req, res) => {
   const nest = nests.find(item => item.id === req.params.nestId);
   if (!nest) return res.status(404).json({ error: "Nest not found." });
 
-  const source = req.body.egg && typeof req.body.egg === "object" ? req.body.egg : req.body;
+  const uploaded = req.body.egg && typeof req.body.egg === "object" ? req.body.egg : req.body;
+  const source = uploaded.egg && typeof uploaded.egg === "object" ? uploaded.egg : uploaded;
   const imported = makeEgg({
     ...source,
-    runtime: req.body.runtime || source.runtime,
-    docker_images: source.docker_images || source.dockerImages,
-    variables: source.variables
+    runtime: req.body.runtime || source.runtime || "generic",
+    docker_images: source.docker_images ?? source.dockerImages,
+    variables: source.variables,
+    pterodactylJson: source
   }, nest.id);
   if (typeof imported === "string") return res.status(400).json({ error: imported });
   nest.eggs.push(imported);

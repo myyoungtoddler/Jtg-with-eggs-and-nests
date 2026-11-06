@@ -8,6 +8,7 @@ export interface EggDefinition {
   dockerImages: string[];
   startup: string;
   variables: EggVariable[];
+  pterodactylJson?: Record<string, unknown>;
 }
 
 export interface EggVariable {

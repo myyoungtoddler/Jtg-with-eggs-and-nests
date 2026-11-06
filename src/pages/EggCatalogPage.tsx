@@ -144,6 +144,7 @@ export default function EggCatalogPage() {
   const exportEgg = () => {
     if (!selectedEgg) return;
     const contents = JSON.stringify({
+      ...(selectedEgg.pterodactylJson || {}),
       name: selectedEgg.name,
       description: selectedEgg.description,
       docker_images: selectedEgg.dockerImages,
@@ -235,7 +236,7 @@ export default function EggCatalogPage() {
                           <input type="file" accept=".json,application/json" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) importEgg(file); event.currentTarget.value = ""; }} />
                         </label>
                       </div>
-                      <p className="text-xs text-muted-foreground">Imported image, startup, and variables are retained. Egg install scripts are not executed by this panel.</p>
+                      <p className="text-xs text-muted-foreground">Pterodactyl metadata is retained on export. Egg install scripts are not executed by this panel.</p>
                     </div>
                   </div>
                 </div>
