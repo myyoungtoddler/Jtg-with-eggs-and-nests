@@ -472,7 +472,7 @@ export const startServer = async (req: Request, res: Response) => {
     const serverDir = path.join(process.cwd(), ".data", "servers", server.id);
     await fs.ensureDir(serverDir);
 
-    const hasVpsAutoInstaller = currentStatus?.Config?.Env?.some((entry: string) => entry === "VPS_INSTALLER_AUTOSTART=1");
+    const hasVpsAutoInstaller = currentStatus?.Config?.Env?.some((entry: string) => entry === "VPS_INSTALLER_AUTOSTART=2");
     if (isVpsEgg && server.containerId && !hasVpsAutoInstaller) {
       console.log(`[startServer] Recreating legacy VPS container ${server.id} with automatic installer selections.`);
       server.containerId = await createServerRuntime(server);

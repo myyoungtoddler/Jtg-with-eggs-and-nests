@@ -438,6 +438,22 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   };
 
   const ensureImage = async (): Promise<string> => {
+    if (isPterodactylVpsEgg) {
+      console.log(`[Docker] Refreshing VPS egg image ${shortImage}...`);
+      await new Promise<void>((resolve, reject) => {
+        docker.pull(shortImage, (err: any, stream: any) => {
+          if (err) return reject(err);
+          docker.modem.followProgress(stream, (progressErr: any) => {
+            if (progressErr) return reject(progressErr);
+            resolve();
+          });
+        });
+      });
+      const refreshedId = await findImageId();
+      if (!refreshedId) throw new Error(`VPS egg image ${shortImage} was pulled but could not be found in Docker.`);
+      return refreshedId;
+    }
+
     let existingId = await findImageId();
     if (existingId) return existingId;
 
@@ -515,7 +531,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     ];
     if (isPterodactylVpsEgg) {
       envVars.push(`STARTUP=${serverData.startupCommand || ""}`);
-      envVars.push("VPS_INSTALLER_AUTOSTART=1");
+      envVars.push("VPS_INSTALLER_AUTOSTART=2");
     }
   } else {
     envVars = [
