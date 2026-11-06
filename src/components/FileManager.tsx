@@ -119,10 +119,6 @@ export default function FileManager({ serverId }: { serverId: string }) {
   };
 
   const openFile = async (name: string) => {
-    if (!name.match(/\.(txt|json|yml|yaml|properties|log|conf|ini|sh|bat|cmd|env|toml|xml|md)$/i)) {
-      showToast("Binary format cannot be directly edited in text editor.", "error");
-      return;
-    }
     const fullPath = path.endsWith("/") ? path + name : path + "/" + name;
     try {
       setIsLoading(true);
@@ -131,8 +127,8 @@ export default function FileManager({ serverId }: { serverId: string }) {
         setEditingFile(name);
         setFileContent(res.data.content);
       }
-    } catch (e) {
-      showToast("Failed to load file contents", "error");
+    } catch (e: any) {
+      showToast(e.response?.data?.error || "Failed to load file contents", "error");
     } finally {
       setIsLoading(false);
     }
@@ -196,9 +192,7 @@ export default function FileManager({ serverId }: { serverId: string }) {
       setActiveModal(null);
       setModalInput("");
       fetchFiles();
-      if (fileName.match(/\.(txt|json|yml|yaml|properties|log|conf|ini|sh|bat|cmd|env|toml|xml|md)$/i)) {
-        openFile(fileName);
-      }
+      openFile(fileName);
     } catch (e) {
       showToast("Failed to create file", "error");
     }

@@ -167,6 +167,7 @@ export const createServer = async (req: Request, res: Response) => {
   const legacyEggId = legacyType === "node" ? "nodejs" : legacyType === "python3" ? "python" : legacyType;
   const legacyEgg = findEgg(eggNests, legacyEggId);
   const selectedEgg = eggId ? findEgg(eggNests, String(eggId)) : legacyEgg;
+  const isVpsEgg = selectedEgg?.id === "vps-egg" || selectedEgg?.dockerImages.some(image => image.toLowerCase().includes("pterodactyl-vps-egg"));
   if (eggId && !selectedEgg) {
     return res.status(400).json({ error: "Unknown egg selected." });
   }
@@ -202,13 +203,14 @@ export const createServer = async (req: Request, res: Response) => {
     runtimeType = "local";
     nodeId = "local";
   }
+  if (isVpsEgg) runtimeType = "docker";
   if (!name || !ram || !port) {
     res.status(400).json({ error: "Missing required fields (name, ram, port)" });
     return;
   }
 
   const id = crypto.randomUUID();
-  const serverData = {
+  const serverData: any = {
     id,
     name,
     owner: owner || ownerId || user.id, // Support assigning owner at creation
@@ -326,6 +328,22 @@ export const createServer = async (req: Request, res: Response) => {
     serverData.status = "offline";
     await writeJSON("servers.json", Object.assign(servers, servers.map((s:any)=>s.id===id?serverData:s)));
     await createSftpUser(id).catch(e => console.error("SFTP user creation failed:", e));
+    if (isVpsEgg) {
+      try {
+        await startServerRuntime(serverData);
+        const runtimeStatus = await getServerRuntimeStatus(serverData);
+        if (!runtimeStatus?.State?.Running) throw new Error("VPS container did not remain running after auto-start.");
+        serverData.status = "online";
+        serverData.startedAt = runtimeStatus.State.StartedAt || new Date().toISOString();
+        await writeJSON("servers.json", servers);
+        await attachServerRuntimeSocket(serverData, id);
+      } catch (startError: any) {
+        console.error(`[createServer] VPS auto-start failed for ${id}:`, startError);
+        serverData.status = "offline";
+        serverData.startupError = String(startError?.message || startError);
+        await writeJSON("servers.json", servers);
+      }
+    }
     res.json(serverData);
   } catch (err: any) {
     console.error(err);
@@ -442,14 +460,24 @@ export const startServer = async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Server is suspended" });
     }
 
+    const isVpsEgg = server.eggId === "vps-egg" || String(server.dockerImage || "").toLowerCase().includes("pterodactyl-vps-egg");
+    if (isVpsEgg) server.runtimeType = "docker";
+
     // Check if already running
-    const currentStatus = await getServerRuntimeStatus(server);
+    const currentStatus: any = await getServerRuntimeStatus(server);
     if (currentStatus?.State?.Running) {
       return res.json({ success: true, message: "Server is already running", startedAt: server.startedAt });
     }
 
     const serverDir = path.join(process.cwd(), ".data", "servers", server.id);
     await fs.ensureDir(serverDir);
+
+    const hasVpsAutoInstaller = currentStatus?.Config?.Env?.some((entry: string) => entry === "VPS_INSTALLER_AUTOSTART=1");
+    if (isVpsEgg && server.containerId && !hasVpsAutoInstaller) {
+      console.log(`[startServer] Recreating legacy VPS container ${server.id} with automatic installer selections.`);
+      server.containerId = await createServerRuntime(server);
+      await writeJSON("servers.json", servers);
+    }
 
     // If server has a mock container ID or missing container ID, and Docker is now enabled, recreate real container
     const isMockId = !server.containerId || server.containerId.startsWith("mock-container-id-");
@@ -927,7 +955,19 @@ export const getFiles = async (req: Request, res: Response) => {
       return res.json([]);
     }
     if (stats.isFile()) {
-       const content = await fs.readFile(targetPath, "utf-8");
+       if (stats.size > 5 * 1024 * 1024) {
+         return res.status(413).json({ error: "File is too large to edit in the browser. Download it to make changes." });
+       }
+       const fileBuffer = await fs.readFile(targetPath);
+       if (fileBuffer.includes(0)) {
+         return res.status(415).json({ error: "This is a binary file. Download it instead of editing it as text." });
+       }
+       let content: string;
+       try {
+         content = new TextDecoder("utf-8", { fatal: true }).decode(fileBuffer);
+       } catch {
+         return res.status(415).json({ error: "This file is not UTF-8 text. Download it instead of editing it as text." });
+       }
        return res.json({ isFile: true, content });
     }
     const files = await fs.readdir(targetPath, { withFileTypes: true });

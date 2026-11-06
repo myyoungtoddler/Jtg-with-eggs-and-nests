@@ -515,6 +515,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     ];
     if (isPterodactylVpsEgg) {
       envVars.push(`STARTUP=${serverData.startupCommand || ""}`);
+      envVars.push("VPS_INSTALLER_AUTOSTART=1");
     }
   } else {
     envVars = [
