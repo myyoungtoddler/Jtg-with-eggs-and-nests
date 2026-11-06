@@ -30,9 +30,9 @@ const normalizeVariables = (variables: any[]): EggDefinition["variables"] => {
 
 const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): EggDefinition | string => {
   const name = String(body.name || "").trim();
-  const runtime = body.runtime === "minecraft" ? "minecraft" : body.runtime === "generic" ? "generic" : null;
+  const runtime = ["minecraft", "generic", "custom"].includes(body.runtime) ? body.runtime as EggDefinition["runtime"] : null;
   if (!name) return "Egg name is required.";
-  if (!runtime) return "Egg runtime must be Minecraft or Generic.";
+  if (!runtime) return "Egg runtime must be Minecraft, Generic, or Custom host process.";
 
   const dockerImages = Array.isArray(body.dockerImages)
     ? body.dockerImages
@@ -44,6 +44,10 @@ const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): E
   const type = String(body.type || body.serverType || (runtime === "minecraft" ? "paper" : "custom")).trim().toLowerCase();
   if (runtime === "generic" && !["nodejs", "python"].includes(type) && dockerImages.length === 0) {
     return "Generic egg requires at least one Docker image.";
+  }
+  const startup = String(body.startup || body.startupCommand || "").trim();
+  if (runtime === "custom" && !startup) {
+    return "Custom runtime egg requires a startup command.";
   }
   const variables = normalizeVariables(body.variables || []);
   if (variables.some(variable => !/^[A-Z_][A-Z0-9_]*$/.test(variable.envVariable))) {
@@ -58,7 +62,7 @@ const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): E
     runtime,
     type,
     dockerImages: dockerImages.map((image: unknown) => String(image).trim()).filter(Boolean),
-    startup: String(body.startup || body.startupCommand || ""),
+    startup,
     variables
   };
 };

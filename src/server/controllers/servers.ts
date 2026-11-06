@@ -176,6 +176,9 @@ export const createServer = async (req: Request, res: Response) => {
   if (selectedEgg && eggId && type && selectedEgg.type !== String(type).toLowerCase()) {
     return res.status(400).json({ error: "Selected egg does not match the requested software type." });
   }
+  if (selectedEgg?.runtime === "custom" && !selectedEgg.startup.trim()) {
+    return res.status(400).json({ error: "Selected custom runtime egg has no startup command." });
+  }
   if (requestedEggDockerImage && !selectedEgg?.dockerImages.includes(String(requestedEggDockerImage))) {
     return res.status(400).json({ error: "Selected image is not available for this egg." });
   }
@@ -194,6 +197,10 @@ export const createServer = async (req: Request, res: Response) => {
   if (!isDevPanel) {
     // If running on Main Panel, enforce the locked default runtime configured at installation
     runtimeType = settings.defaultRuntime || "docker";
+  }
+  if (selectedEgg?.runtime === "custom") {
+    runtimeType = "local";
+    nodeId = "local";
   }
   if (!name || !ram || !port) {
     res.status(400).json({ error: "Missing required fields (name, ram, port)" });
@@ -217,7 +224,7 @@ export const createServer = async (req: Request, res: Response) => {
     eggId: eggId || selectedEgg?.id || null,
     eggName: selectedEgg?.name || null,
     eggRuntime: selectedEgg?.runtime || null,
-    dockerImage: requestedEggDockerImage || selectedEgg?.dockerImages[0] || "",
+    dockerImage: selectedEgg?.runtime === "custom" ? "" : requestedEggDockerImage || selectedEgg?.dockerImages[0] || "",
     startupCommand: selectedEgg?.startup || "",
     eggEnvironment,
     version: version || "26.3",
@@ -270,7 +277,7 @@ export const createServer = async (req: Request, res: Response) => {
       if (!fs.existsSync(reqPath)) {
         await fs.writeFile(reqPath, "# Add python dependencies here\n");
       }
-    } else if (selectedEgg?.runtime !== "generic") {
+    } else if (selectedEgg?.runtime !== "generic" && selectedEgg?.runtime !== "custom") {
       // Minecraft Server Pre-seeding
       const eulaPath = path.join(serverDir, "eula.txt");
       if (!fs.existsSync(eulaPath)) {
@@ -439,7 +446,7 @@ export const startServer = async (req: Request, res: Response) => {
 
     // Ensure server.jar is present for Minecraft servers before boot
     const upperType = (server.type || "PAPER").toUpperCase();
-    if (server.eggRuntime !== "generic" && !["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(upperType)) {
+    if (!["generic", "custom"].includes(server.eggRuntime) && !["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(upperType)) {
       const jarPath = path.join(serverDir, "server.jar");
       if (!fs.existsSync(jarPath)) {
         try {

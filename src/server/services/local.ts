@@ -65,6 +65,10 @@ export const createLocalServer = async (serverData: any) => {
   const serverPath = path.join(process.cwd(), ".data", "servers", serverData.id);
   await fs.ensureDir(serverPath);
 
+  if (serverData.eggRuntime === "custom") {
+    return `local-${serverData.id}`;
+  }
+
   const type = (serverData.type || "paper").toLowerCase();
 
   if (type === "nodejs" || type === "node") {
@@ -162,7 +166,30 @@ export const startLocalServer = async (id: string, serverData: any) => {
 
   let child: any;
 
-  if (type === "nodejs" || type === "node") {
+  if (serverData.eggRuntime === "custom") {
+    const startup = String(serverData.startupCommand || "").trim();
+    if (!startup) throw new Error("Custom runtime startup command is required.");
+    const eggEnvironment = Object.fromEntries(
+      Object.entries(serverData.eggEnvironment || {})
+        .filter(([key]) => /^[A-Z_][A-Z0-9_]*$/.test(key))
+        .map(([key, value]) => [key, String(value)])
+    );
+    const command = startup.replace(/\{\{([A-Z_][A-Z0-9_]*)\}\}/g, (_match: string, key: string) => `$${key}`);
+    child = spawn("/bin/sh", ["-c", command], {
+      cwd: serverPath,
+      env: {
+        PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+        HOME: serverPath,
+        LANG: process.env.LANG || "C.UTF-8",
+        ...eggEnvironment,
+        PORT: String(serverData.port || 25565),
+        SERVER_PORT: String(serverData.port || 25565),
+        SERVER_MEMORY: String(Number(serverData.ram || 1) * 1024),
+        SERVER_NAME: String(serverData.name || id)
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+  } else if (type === "nodejs" || type === "node") {
     let entry = "index.js";
     for (const testFile of ["index.js", "app.js", "server.js", "main.js", "bot.js"]) {
       if (await fs.pathExists(path.join(serverPath, testFile))) {

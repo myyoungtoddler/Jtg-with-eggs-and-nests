@@ -934,17 +934,19 @@ export default function CreateServer() {
                       <span className="flex-1 h-px bg-[#232323]"></span>
                     </div>
 
-                    {selectedEgg?.runtime === 'generic' && (
+                    {(selectedEgg?.runtime === 'generic' || selectedEgg?.runtime === 'custom') && (
                       <div className="mt-3 p-3 bg-white/[0.03] border border-white/10 rounded-lg flex items-start gap-2.5">
                         <Info className="w-4 h-4 text-[#8f8f8f] shrink-0 mt-0.5" />
                         <p className="text-xs text-[#8f8f8f] font-mono leading-relaxed">
-                          Generic application egg selected. This server will use the egg's container image and startup command.
+                          {selectedEgg.runtime === 'custom'
+                            ? "Custom runtime selected. The startup command runs directly on the panel host without Docker isolation."
+                            : "Generic application egg selected. This server will use the egg's container image and startup command."}
                         </p>
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                      {(selectedEgg?.dockerImages.length || 0) > 0 && (
+                      {selectedEgg?.runtime !== 'custom' && (selectedEgg?.dockerImages.length || 0) > 0 && (
                         <label className="block">
                           <span className="block text-sm text-[#8f8f8f] mb-2">Container image</span>
                           <select value={state.eggDockerImage} onChange={event => updateState('eggDockerImage', event.target.value)} className="inp font-mono">
@@ -1015,7 +1017,7 @@ export default function CreateServer() {
                     <>
                       <div className="font-mono text-[13px] divide-y divide-[#232323] border border-[#232323] bg-[#0e0e0e]">
                         {renderReviewRow('INSTANCE', state.name || '—')}
-  {renderReviewRow('RUNTIME', state.runtimeType === 'local' ? 'Local Process (Beta)' : 'Docker')}
+  {renderReviewRow('RUNTIME', selectedEgg?.runtime === 'custom' ? 'Custom host process (no Docker)' : state.runtimeType === 'local' ? 'Local Process (Beta)' : 'Docker')}
                         {renderReviewRow('DESCRIPTION', state.desc || '—')}
                         {renderReviewRow('PORT', String(state.port))}
                         {renderReviewRow('RAM', state.ram + ' GB')}

@@ -3,7 +3,7 @@ export interface EggDefinition {
   nestId: string;
   name: string;
   description: string;
-  runtime: "minecraft" | "generic";
+  runtime: "minecraft" | "generic" | "custom";
   type: string;
   dockerImages: string[];
   startup: string;

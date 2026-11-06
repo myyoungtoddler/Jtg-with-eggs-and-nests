@@ -8,7 +8,7 @@ import { EggDefinition, EggNest } from "../utils/eggCatalog";
 const emptyEgg = (): Partial<EggDefinition> => ({
   name: "",
   description: "",
-  runtime: "generic",
+  runtime: "custom",
   type: "custom",
   dockerImages: [],
   startup: "",
@@ -26,7 +26,7 @@ export default function EggCatalogPage() {
   const [nestName, setNestName] = useState("");
   const [imagesText, setImagesText] = useState("");
   const [variablesText, setVariablesText] = useState("[]");
-  const [importRuntime, setImportRuntime] = useState<"minecraft" | "generic">("generic");
+  const [importRuntime, setImportRuntime] = useState<"minecraft" | "generic" | "custom">("generic");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -225,9 +225,10 @@ export default function EggCatalogPage() {
                     <div className="mt-5 border-t border-border-subtle pt-4">
                       <label className="block text-xs text-muted-foreground mb-2">Import Pterodactyl egg JSON</label>
                       <div className="flex items-center gap-2 mb-2">
-                        <select value={importRuntime} onChange={event => setImportRuntime(event.target.value as "minecraft" | "generic")} className="bg-card border border-border-subtle px-2 py-2 text-sm">
+                        <select value={importRuntime} onChange={event => setImportRuntime(event.target.value as "minecraft" | "generic" | "custom")} className="bg-card border border-border-subtle px-2 py-2 text-sm">
                           <option value="generic">Generic runtime</option>
                           <option value="minecraft">Minecraft runtime</option>
+                          <option value="custom">Custom host process</option>
                         </select>
                         <label className="inline-flex items-center gap-2 border border-border-subtle px-3 py-2 text-sm cursor-pointer hover:bg-card">
                           <FileUp size={15} /> Import JSON
@@ -242,7 +243,7 @@ export default function EggCatalogPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h2 className="text-lg font-semibold">{selectedEgg ? `Edit ${selectedEgg.name}` : "Create egg"}</h2>
-                    <p className="text-xs text-muted-foreground mt-1">Eggs define the container image, startup command, and user variables.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Custom eggs run a startup command on the panel host without a container image.</p>
                   </div>
                   {selectedEgg && <button onClick={exportEgg} className="inline-flex items-center gap-2 border border-border-subtle px-3 py-2 text-sm"><Download size={15} /> Export JSON</button>}
                 </div>
@@ -252,9 +253,9 @@ export default function EggCatalogPage() {
                     <input value={eggForm.name || ""} onChange={event => setEggForm(form => ({ ...form, name: event.target.value }))} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1.5">Runtime</label>
+                    <label className="block text-xs text-muted-foreground mb-1.5">Egg runtime</label>
                     <select value={eggForm.runtime || "generic"} onChange={event => setEggForm(form => ({ ...form, runtime: event.target.value as EggDefinition["runtime"] }))} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm">
-                      <option value="minecraft">Minecraft</option><option value="generic">Generic</option>
+                      <option value="minecraft">Minecraft</option><option value="generic">Generic container</option><option value="custom">Custom host process</option>
                     </select>
                   </div>
                   <div>
@@ -265,10 +266,14 @@ export default function EggCatalogPage() {
                     <label className="block text-xs text-muted-foreground mb-1.5">Description</label>
                     <input value={eggForm.description || ""} onChange={event => setEggForm(form => ({ ...form, description: event.target.value }))} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm" />
                   </div>
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1.5">Docker images (one per line)</label>
-                    <textarea value={imagesText} onChange={event => setImagesText(event.target.value)} rows={4} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm font-mono" placeholder="ghcr.io/pterodactyl/yolks:java_21" />
-                  </div>
+                  {eggForm.runtime === "custom" ? (
+                    <div className="border border-border-subtle bg-card px-3 py-3 text-sm text-muted-foreground">No Docker image is used. This command runs directly on the panel host.</div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1.5">Docker images (one per line)</label>
+                      <textarea value={imagesText} onChange={event => setImagesText(event.target.value)} rows={4} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm font-mono" placeholder="ghcr.io/pterodactyl/yolks:java_21" />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1.5">Startup command</label>
                     <textarea value={eggForm.startup || ""} onChange={event => setEggForm(form => ({ ...form, startup: event.target.value }))} rows={4} className="w-full bg-card border border-border-subtle px-3 py-2.5 text-sm font-mono" placeholder="java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}" />
