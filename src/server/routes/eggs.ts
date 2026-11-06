@@ -51,8 +51,8 @@ const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): E
     return "Custom runtime egg requires a startup command.";
   }
   const variables = normalizeVariables(body.variables || []);
-  if (variables.some(variable => !/^[A-Z_][A-Z0-9_]*$/.test(variable.envVariable))) {
-    return "Environment variable names must use uppercase letters, numbers, and underscores.";
+  if (variables.some(variable => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable.envVariable))) {
+    return "Environment variable names must start with a letter or underscore and contain only letters, numbers, and underscores.";
   }
 
   return {

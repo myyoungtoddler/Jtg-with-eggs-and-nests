@@ -1,3 +1,5 @@
+import vpsEggJson from "../../egg-vps.json";
+
 export interface EggDefinition {
   id: string;
   nestId: string;
@@ -27,6 +29,34 @@ export interface EggNest {
   description: string;
   eggs: EggDefinition[];
 }
+
+const vpsEgg: EggDefinition = {
+  id: "vps-egg",
+  nestId: "vps",
+  name: vpsEggJson.name,
+  description: vpsEggJson.description,
+  runtime: "generic",
+  type: "vps",
+  dockerImages: Object.values(vpsEggJson.docker_images),
+  startup: vpsEggJson.startup,
+  variables: vpsEggJson.variables.map(variable => ({
+    name: variable.name,
+    envVariable: variable.env_variable,
+    defaultValue: variable.default_value,
+    userViewable: variable.user_viewable,
+    userEditable: variable.user_editable,
+    rules: variable.rules,
+    fieldType: variable.field_type === "boolean" ? "boolean" : "text"
+  })),
+  pterodactylJson: vpsEggJson
+};
+
+export const VPS_EGG_NEST: EggNest = {
+  id: "vps",
+  name: "VPS",
+  description: "Virtual private server eggs",
+  eggs: [vpsEgg]
+};
 
 const makeEgg = (nestId: string, id: string, name: string, description: string, runtime: EggDefinition["runtime"], type = id): EggDefinition => ({
   id,
@@ -62,7 +92,8 @@ export const DEFAULT_EGG_NESTS: EggNest[] = [
       makeEgg("generic", "nodejs", "Node.js", "JavaScript and TypeScript applications", "generic"),
       makeEgg("generic", "python", "Python", "Python applications and scripts", "generic")
     ]
-  }
+  },
+  VPS_EGG_NEST
 ];
 
 export const EGG_NESTS = DEFAULT_EGG_NESTS.map(nest => ({
