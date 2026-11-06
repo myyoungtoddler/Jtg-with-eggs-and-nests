@@ -1,7 +1,8 @@
 import express from "express";
 import crypto from "crypto";
+import axios from "axios";
 import { requireAuth } from "../middleware/auth.js";
-import { EggDefinition, EggNest } from "../../utils/eggCatalog.js";
+import { EggDefinition, EggNest, VPS_INSTALL_DISTROS } from "../../utils/eggCatalog.js";
 import { getEggNests, saveEggNests } from "../services/eggCatalog.js";
 import { readJSON } from "../services/db.js";
 
@@ -73,6 +74,36 @@ const makeEgg = (body: any, nestId: string, id: string = crypto.randomUUID()): E
 
 router.get("/", async (_req, res) => {
   res.json(await getEggNests());
+});
+
+router.get("/vps-install-options", async (req, res) => {
+  const distro = VPS_INSTALL_DISTROS.find(item => item.selection === String(req.query.distro || ""));
+  if (!distro) return res.status(400).json({ error: "Unknown VPS distribution." });
+  if (distro.customHandler) {
+    return res.json({ versions: [{ selection: "1", name: "Latest" }], versionRequired: false });
+  }
+
+  const architecture = ({ x64: "amd64", arm64: "arm64", riscv64: "riscv64" } as Record<string, string>)[process.arch];
+  if (!architecture) return res.status(400).json({ error: "The VPS image does not support this CPU architecture." });
+  const baseUrl = "https://images.linuxcontainers.org/images";
+  const listingUrl = distro.custom
+    ? `${baseUrl}/${distro.slug}/current/${architecture}/`
+    : `${baseUrl}/${distro.slug}/`;
+
+  try {
+    const { data } = await axios.get<string>(listingUrl, { timeout: 15000, responseType: "text" });
+    const rawVersions = [...String(data).matchAll(/href="([^"/]+)\/"/g)]
+      .map(match => match[1])
+      .filter(version => version !== ".." && version !== ".");
+    const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+    const versions = rawVersions
+      .map((name, index) => ({ selection: String(index + 1), name }))
+      .sort((left, right) => collator.compare(right.name, left.name));
+    if (versions.length === 0) return res.status(502).json({ error: "No install releases were found for this distribution." });
+    res.json({ versions, latestSelection: String(rawVersions.length), versionRequired: versions.length > 1 });
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || "Could not load VPS releases." });
+  }
 });
 
 router.post("/nests", async (req, res) => {

@@ -11,9 +11,21 @@ const ensureVpsDefault = (nests: EggNest[]) => {
     return true;
   }
   if (!Array.isArray(nest.eggs)) nest.eggs = [];
-  if (nest.eggs.some(egg => egg.id === defaultNest.eggs[0].id)) return false;
-  nest.eggs.push(defaultNest.eggs[0]);
-  return true;
+  const defaultEgg = defaultNest.eggs[0];
+  const existingEgg = nest.eggs.find(egg => egg.id === defaultEgg.id);
+  if (!existingEgg) {
+    nest.eggs.push(defaultEgg);
+    return true;
+  }
+
+  if (!Array.isArray(existingEgg.variables)) existingEgg.variables = [];
+  let changed = false;
+  for (const variable of defaultEgg.variables) {
+    if (existingEgg.variables.some(item => item.envVariable === variable.envVariable)) continue;
+    existingEgg.variables.push(variable);
+    changed = true;
+  }
+  return changed;
 };
 
 export const getEggNests = async (): Promise<EggNest[]> => {

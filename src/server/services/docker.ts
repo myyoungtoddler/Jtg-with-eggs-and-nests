@@ -595,6 +595,20 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
         cmd = ["/bin/sh", "-c", serverData.startupCommand];
       }
     }
+
+    if (isPterodactylVpsEgg) {
+      const distroSelection = String(serverData.eggEnvironment?.VPS_DISTRO_SELECTION || "2").replace(/[^0-9]/g, "") || "2";
+      const releaseSelection = String(serverData.eggEnvironment?.VPS_RELEASE_SELECTION || "1").replace(/[^0-9]/g, "") || "1";
+      const releaseRequired = String(serverData.eggEnvironment?.VPS_RELEASE_REQUIRED || "true").toLowerCase() !== "false";
+      const installerInput = releaseRequired
+        ? `printf '%s\\n%s\\n' '${distroSelection}' '${releaseSelection}'; cat`
+        : `printf '%s\\n' '${distroSelection}'; cat`;
+      cmd = [
+        "/bin/sh",
+        "-c",
+        `if [ ! -e "$HOME/.installed" ]; then { ${installerInput}; } | /bin/sh /entrypoint.sh; else exec /bin/sh /entrypoint.sh; fi`
+      ];
+    }
     
     return {
       Image: img,

@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import CategorizedVersionDropdown from "../components/CategorizedVersionDropdown";
 import { getJavaVersionForMinecraft } from "../utils/minecraftJava";
-import { DEFAULT_EGG_NESTS, EggDefinition, EggNest, findEgg } from "../utils/eggCatalog";
+import { DEFAULT_EGG_NESTS, EggDefinition, EggNest, VPS_INSTALL_DISTROS, findEgg } from "../utils/eggCatalog";
 import {
   ArrowLeft, Server, AlertTriangle, AlignLeft, MemoryStick as MemoryStickIcon,
   Cpu, Zap, Sparkles, HardDrive, Globe, User, Radio, GitBranch, Check,
@@ -194,6 +194,9 @@ export default function CreateServer() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [versions, setVersions] = useState<string[]>([]);
+  const [vpsReleases, setVpsReleases] = useState<{ selection: string; name: string }[]>([]);
+  const [vpsReleasesLoading, setVpsReleasesLoading] = useState(false);
+  const [vpsReleaseError, setVpsReleaseError] = useState("");
   const [nests, setNests] = useState<EggNest[]>([]);
   
   // Form State
@@ -330,6 +333,42 @@ export default function CreateServer() {
     }));
   }, [selectedEgg?.id, nests]);
 
+  useEffect(() => {
+    if (selectedEgg?.id !== "vps-egg") {
+      setVpsReleases([]);
+      setVpsReleaseError("");
+      return;
+    }
+    let active = true;
+    setVpsReleasesLoading(true);
+    setVpsReleaseError("");
+    axios.get("/api/eggs/vps-install-options", {
+      params: { distro: state.eggEnvironment.VPS_DISTRO_SELECTION || "2" }
+    }).then(({ data }) => {
+      if (!active) return;
+      const releases = Array.isArray(data.versions) ? data.versions : [];
+      setVpsReleases(releases);
+      setState(current => {
+        return {
+          ...current,
+          eggEnvironment: {
+            ...current.eggEnvironment,
+            VPS_RELEASE_SELECTION: String(data.latestSelection || releases[0]?.selection || "1"),
+            VPS_RELEASE_REQUIRED: String(Boolean(data.versionRequired))
+          }
+        };
+      });
+    }).catch(error => {
+      if (active) {
+        setVpsReleases([]);
+        setVpsReleaseError(error.response?.data?.error || "Could not load releases for this distribution.");
+      }
+    }).finally(() => {
+      if (active) setVpsReleasesLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedEgg?.id, state.eggEnvironment.VPS_DISTRO_SELECTION]);
+
   const updateState = (key: string, val: any) => {
     setState(prev => ({ ...prev, [key]: val }));
   };
@@ -398,6 +437,10 @@ export default function CreateServer() {
   
   const launch = async () => {
     if (deployed) return;
+    if (selectedEgg?.id === "vps-egg" && (vpsReleasesLoading || vpsReleaseError || !vpsReleases.length)) {
+      alert(vpsReleaseError || "Wait for the VPS release list to load before creating the server.");
+      return;
+    }
     setDeployProgress(1); // shows the progress block
     
     // Fake progress interval
@@ -953,6 +996,45 @@ export default function CreateServer() {
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      {selectedEgg?.id === 'vps-egg' && (
+                        <>
+                          <label className="block">
+                            <span className="block text-sm text-[#8f8f8f] mb-2">Linux distribution</span>
+                            <select
+                              value={state.eggEnvironment.VPS_DISTRO_SELECTION || "2"}
+                              onChange={event => setState(current => ({
+                                ...current,
+                                eggEnvironment: { ...current.eggEnvironment, VPS_DISTRO_SELECTION: event.target.value }
+                              }))}
+                              className="inp font-mono"
+                            >
+                              {VPS_INSTALL_DISTROS.map(distro => (
+                                <option key={distro.selection} value={distro.selection}>{distro.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className="block text-sm text-[#8f8f8f] mb-2">Linux release</span>
+                            <select
+                              value={state.eggEnvironment.VPS_RELEASE_SELECTION || "1"}
+                              disabled={vpsReleasesLoading || vpsReleases.length === 0}
+                              onChange={event => setState(current => ({
+                                ...current,
+                                eggEnvironment: { ...current.eggEnvironment, VPS_RELEASE_SELECTION: event.target.value }
+                              }))}
+                              className="inp font-mono disabled:opacity-50"
+                            >
+                              {vpsReleases.map(release => (
+                                <option key={`${release.selection}-${release.name}`} value={release.selection}>{release.name}</option>
+                              ))}
+                            </select>
+                            {vpsReleaseError && <span role="alert" className="block text-xs text-red-400 mt-2">{vpsReleaseError}</span>}
+                          </label>
+                          <p className="sm:col-span-2 text-[10px] text-[#777] font-mono">
+                            The selected distribution installs automatically on first start; no console input is needed.
+                          </p>
+                        </>
+                      )}
                       {selectedEgg?.runtime !== 'custom' && (selectedEgg?.dockerImages.length || 0) > 0 && (
                         <label className="block">
                           <span className="block text-sm text-[#8f8f8f] mb-2">Container image</span>
