@@ -186,7 +186,7 @@ const getInitials = (name: string) => name ? name.slice(0, 2).toUpperCase() : '?
 import { useSettings } from '../context/SettingsContext';
 
 export default function CreateServer() {
-  const { defaultRuntime, isDevPanel } = useSettings();
+  const { defaultRuntime, defaultAllocationHost, isDevPanel } = useSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
   
@@ -206,9 +206,10 @@ export default function CreateServer() {
   
   const [portStatus, setPortStatus] = useState('idle'); // 'idle', 'checking', 'used', 'available', 'invalid', 'error'
   const portCheckIdRef = useRef(0);
+  const allocationHostTouchedRef = useRef(false);
   
   const [state, setState] = useState({
-    name: '', desc: '', ram: 4, cpu: 150, disk: 10, ip: '', port: 25565, runtimeType: defaultRuntime || 'docker', 
+    name: '', desc: '', ram: 4, cpu: 150, disk: 10, ip: defaultAllocationHost || '', port: 25565, runtimeType: defaultRuntime || 'docker',
     owner: user?.id || '', node: '', nestId: 'minecraft', eggId: 'paper', software: 'paper', version: '26.3', eggDockerImage: '', eggEnvironment: {} as Record<string, string>, auto: true
   });
 
@@ -221,6 +222,12 @@ export default function CreateServer() {
       setState(s => ({ ...s, runtimeType: defaultRuntime }));
     }
   }, [defaultRuntime]);
+
+  useEffect(() => {
+    if (!allocationHostTouchedRef.current) {
+      setState(s => ({ ...s, ip: defaultAllocationHost || '' }));
+    }
+  }, [defaultAllocationHost]);
 
   useEffect(() => {
     if (!isDevPanel && defaultRuntime) {
@@ -785,9 +792,9 @@ export default function CreateServer() {
                   </label>
                   <input 
                     type="text" className="inp font-mono" placeholder="play.example.com" 
-                    value={state.ip} onChange={e => updateState('ip', e.target.value)}
+                    value={state.ip} onChange={e => { allocationHostTouchedRef.current = true; updateState('ip', e.target.value); }}
                   />
-                  <p className="text-[11px] text-[#4c4c4c] mt-2 mb-8 font-mono">Optional custom domain or subdomain used to access your server.</p>
+                  <p className="text-[11px] text-[#4c4c4c] mt-2 mb-8 font-mono">Default: {defaultAllocationHost || 'none set'}. You can override this host for this server.</p>
 
                   {(user?.role === "admin" || user?.role === "owner") && (
                     <>

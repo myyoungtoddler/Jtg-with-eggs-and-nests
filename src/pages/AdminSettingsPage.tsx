@@ -7,7 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import PageHeader from "../components/PageHeader";
 import { motion } from "framer-motion";
-import { Check, Shield, User, Trash2, Layout, Upload, RefreshCw, Key, CheckCircle2, AlertCircle, Globe, Sparkles, ExternalLink, Cpu, Image, Settings, ArrowLeft, Menu, X, Lock } from "lucide-react";
+import { Check, Shield, User, Trash2, Layout, Upload, RefreshCw, Key, CheckCircle2, AlertCircle, Globe, Sparkles, ExternalLink, Cpu, Image, Settings, ArrowLeft, Menu, X, Lock, Save } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ImageCropper } from "../components/ImageCropper";
 import { LoadingOverlay } from "../components/LoadingOverlay";
@@ -22,6 +22,7 @@ export default function AdminSettingsPage(): React.ReactElement {
   const adminTabs = [
     { id: "branding", label: "Branding", icon: <Layout size={20} /> },
     { id: "features", label: "Features", icon: <Settings size={20} /> },
+    { id: "allocation", label: "Allocation", icon: <Globe size={20} /> },
     { id: "runtime", label: "Runtime", icon: <Cpu size={20} /> },
     { id: "appearance", label: "Appearance", icon: <Image size={20} /> },
     { id: "auth", label: "Authentication", icon: <Key size={20} /> },
@@ -65,6 +66,7 @@ export default function AdminSettingsPage(): React.ReactElement {
     enablePlayit, enableTutorial, enableLoginAnimation, enableRegistration, theme, setTheme, 
     enableGoogleLogin, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, 
     firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, defaultRuntime, setDefaultRuntime,
+    defaultAllocationHost, setDefaultAllocationHost,
     isDevPanel,
     fetchSettings 
   } = useSettings();
@@ -117,8 +119,11 @@ export default function AdminSettingsPage(): React.ReactElement {
   const [newEnableRegistration, setNewEnableRegistration] = useState(enableRegistration);
   const [newTheme, setNewTheme] = useState(theme);
   const [newDefaultRuntime, setNewDefaultRuntime] = useState(defaultRuntime || 'docker');
+  const [newDefaultAllocationHost, setNewDefaultAllocationHost] = useState(defaultAllocationHost || '');
   const [isUpdatingRuntime, setIsUpdatingRuntime] = useState(false);
   const [runtimeStatusMsg, setRuntimeStatusMsg] = useState<{ text: string; type: "success" | "error" | "warning" } | null>(null);
+  const [isSavingAllocationHost, setIsSavingAllocationHost] = useState(false);
+  const [allocationHostStatusMsg, setAllocationHostStatusMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // Firebase Config Local State
   const [fbEnableGoogleLogin, setFbEnableGoogleLogin] = useState<boolean>(enableGoogleLogin || false);
@@ -177,7 +182,26 @@ export default function AdminSettingsPage(): React.ReactElement {
     setFbAppId(firebaseAppId || "");
     setCustomBgUrlInput(panelBackgroundImage || "");
     setNewDefaultRuntime(defaultRuntime || 'docker');
-  }, [defaultRuntime, panelName, panelBackgroundImage, enablePlayit, enableTutorial, enableLoginAnimation, enableRegistration, theme, setTheme, enableGoogleLogin, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId]);
+    setNewDefaultAllocationHost(defaultAllocationHost || '');
+  }, [defaultRuntime, defaultAllocationHost, panelName, panelBackgroundImage, enablePlayit, enableTutorial, enableLoginAnimation, enableRegistration, theme, setTheme, enableGoogleLogin, firebaseApiKey, firebaseAuthDomain, firebaseProjectId, firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId]);
+
+  const handleSaveAllocationHost = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSavingAllocationHost(true);
+    setAllocationHostStatusMsg(null);
+    try {
+      const { data } = await axios.put("/api/system/settings", {
+        defaultAllocationHost: newDefaultAllocationHost.trim()
+      });
+      setDefaultAllocationHost(data.defaultAllocationHost || "");
+      await fetchSettings();
+      setAllocationHostStatusMsg({ text: "Default allocation host saved.", type: "success" });
+    } catch (error: any) {
+      setAllocationHostStatusMsg({ text: error.response?.data?.error || error.message || "Could not save allocation host.", type: "error" });
+    } finally {
+      setIsSavingAllocationHost(false);
+    }
+  };
 
   const handleSaveFirebaseSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -784,6 +808,45 @@ export default function AdminSettingsPage(): React.ReactElement {
                     </section>
 
         
+
+<section id="allocation" className="scroll-mt-24 bg-card border border-border-subtle rounded-2xl p-6 md:p-8 shadow-xl relative overflow-hidden">
+  <div className="flex items-center justify-between mb-6 relative z-10">
+    <h2 className="text-xl font-bold flex items-center text-foreground">
+      <Globe className="mr-3 text-theme-500 w-5 h-5" /> Default Allocation
+    </h2>
+  </div>
+  <form onSubmit={handleSaveAllocationHost} className="relative z-10 max-w-2xl">
+    <label htmlFor="default-allocation-host" className="block text-sm font-semibold text-foreground mb-2">
+      Default allocation hostname
+    </label>
+    <p className="text-xs text-muted-foreground mb-4">
+      Used for new servers unless a different IP alias is entered. The server port is appended separately.
+    </p>
+    <div className="flex flex-col sm:flex-row gap-3">
+      <input
+        id="default-allocation-host"
+        type="text"
+        value={newDefaultAllocationHost}
+        onChange={event => setNewDefaultAllocationHost(event.target.value)}
+        maxLength={253}
+        placeholder="server.waternodes.net"
+        className="flex-1 bg-card border border-border-subtle px-3 py-2.5 text-sm font-mono outline-none focus:border-theme-500"
+      />
+      <button
+        type="submit"
+        disabled={isSavingAllocationHost}
+        className="inline-flex items-center justify-center gap-2 bg-theme-600 hover:bg-theme-700 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
+      >
+        <Save size={16} /> Save allocation
+      </button>
+    </div>
+    {allocationHostStatusMsg && (
+      <p role="status" className={`mt-3 text-sm ${allocationHostStatusMsg.type === "success" ? "text-emerald-400" : "text-rose-400"}`}>
+        {allocationHostStatusMsg.text}
+      </p>
+    )}
+  </form>
+</section>
 
 <section id="runtime" className="scroll-mt-24 bg-card border border-border-subtle rounded-2xl p-6 md:p-8 shadow-xl relative overflow-hidden">
                       <div className="flex items-center justify-between mb-6 relative z-10">

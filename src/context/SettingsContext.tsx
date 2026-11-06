@@ -22,6 +22,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const [firebaseMessagingSenderId, setFirebaseMessagingSenderId] = useState<string>("");
   const [firebaseAppId, setFirebaseAppId] = useState<string>("");
   const [defaultRuntime, setDefaultRuntime] = useState<string>("docker");
+  const [defaultAllocationHost, setDefaultAllocationHost] = useState<string>("");
   const [isDevPanel, setIsDevPanel] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       const sim = localStorage.getItem("jtg_simulate_dev_panel");
@@ -61,6 +62,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
       if (res.data.firebaseMessagingSenderId !== undefined) setFirebaseMessagingSenderId(res.data.firebaseMessagingSenderId);
       if (res.data.firebaseAppId !== undefined) setFirebaseAppId(res.data.firebaseAppId);
       if (res.data.defaultRuntime !== undefined) setDefaultRuntime(res.data.defaultRuntime);
+      if (res.data.defaultAllocationHost !== undefined) setDefaultAllocationHost(res.data.defaultAllocationHost);
       if (res.data.isDevPanel !== undefined) {
         const sim = localStorage.getItem("jtg_simulate_dev_panel");
         if (sim === null && typeof window !== "undefined") {
@@ -141,6 +143,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
       firebaseStorageBucket, setFirebaseStorageBucket,
       firebaseMessagingSenderId, setFirebaseMessagingSenderId,
       firebaseAppId, setFirebaseAppId, defaultRuntime, setDefaultRuntime,
+      defaultAllocationHost, setDefaultAllocationHost,
       isDevPanel, setIsDevPanel, toggleDevPanel,
       fetchSettings 
     }}>

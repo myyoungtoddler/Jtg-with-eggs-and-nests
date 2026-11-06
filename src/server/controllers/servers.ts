@@ -216,7 +216,7 @@ export const createServer = async (req: Request, res: Response) => {
     cpu: cpu || 100,
     disk: disk || 10,
     port,
-    ipAlias: ipAlias || "",
+    ipAlias: String(ipAlias || settings.defaultAllocationHost || "").trim(),
     runtimeType: runtimeType || "docker",
     nodeId: nodeId || "local",
     type: type || "PAPER",
@@ -249,6 +249,25 @@ export const createServer = async (req: Request, res: Response) => {
   try {
     const serverDir = path.join(process.cwd(), ".data", "servers", id);
     await fs.ensureDir(serverDir);
+    if (String(serverData.dockerImage).toLowerCase().includes("pterodactyl-vps-egg")) {
+      const eggJson = selectedEgg?.pterodactylJson as any;
+      const configFiles = typeof eggJson?.config?.files === "string" ? JSON.parse(eggJson.config.files) : {};
+      const properties = configFiles["vps.config"];
+      if (properties?.parser === "properties" && properties.find && typeof properties.find === "object") {
+        const configLines = Object.entries(properties.find).map(([key, template]) => {
+          const value = String(template)
+            .replace(/\{\{server\.build\.default\.ip\}\}/g, String(serverData.ipAlias || "0.0.0.0"))
+            .replace(/\{\{server\.build\.default\.port\}\}/g, String(serverData.port))
+            .replace(/\{\{server\.build\.env\.([^}]+)\}\}/g, (_match, variableName: string) => {
+              const environment = serverData.eggEnvironment as Record<string, string>;
+              const variable = Object.keys(environment).find(name => name.toLowerCase() === variableName.toLowerCase());
+              return variable ? environment[variable] : "";
+            });
+          return `${key}=${value}`;
+        });
+        await fs.writeFile(path.join(serverDir, "vps.config"), `${configLines.join("\n")}\n`);
+      }
+    }
     const upperType = (type || "PAPER").toUpperCase();
     if (upperType === "NODEJS" || upperType === "NODE") {
       const indexPath = path.join(serverDir, "index.js");

@@ -47,6 +47,7 @@ router.get("/settings", async (req, res) => {
     firebaseMessagingSenderId: settings.firebaseMessagingSenderId || "",
     firebaseAppId: settings.firebaseAppId || "",
     defaultRuntime: settings.defaultRuntime || process.env.DEFAULT_RUNTIME || "docker",
+    defaultAllocationHost: settings.defaultAllocationHost || "",
     isDevPanel: (process.env.PANEL_TYPE === "dev" || process.env.PORT === "3000") && !process.env.FORCE_MAIN_PANEL,
     panelPort: process.env.PORT || "6767"
   });

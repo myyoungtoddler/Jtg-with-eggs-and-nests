@@ -365,6 +365,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   const isNode = ["NODEJS", "NODE"].includes(serverType);
   const isPython = ["PYTHON", "PYTHON3"].includes(serverType);
   const isEggGeneric = serverData.eggRuntime === "generic";
+  const isPterodactylVpsEgg = String(serverData.dockerImage || "").toLowerCase().includes("pterodactyl-vps-egg");
   const isGenericApp = isNode || isPython || isEggGeneric;
   const isProxy = ["VELOCITY", "BUNGEECORD", "WATERFALL"].includes(serverType);
   
@@ -512,6 +513,9 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       `SERVER_MEMORY=${Number(serverData.ram || 1) * 1024}`,
       `MEMORY=${serverData.ram}G`
     ];
+    if (isPterodactylVpsEgg) {
+      envVars.push(`STARTUP=${serverData.startupCommand || ""}`);
+    }
   } else {
     envVars = [
       `TYPE=${serverType}`,
@@ -558,7 +562,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   }
 
   for (const [key, value] of Object.entries(serverData.eggEnvironment || {})) {
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) continue;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
     envVars = envVars.filter(entry => entry.slice(0, entry.indexOf("=")) !== key);
     envVars.push(`${key}=${String(value)}`);
   }
@@ -574,7 +578,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       cmd = ["/bin/sh", "-c", serverData.startupCommand || "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if [ -f main.py ]; then python3 -u main.py; elif [ -f app.py ]; then python3 -u app.py; elif [ -f bot.py ]; then python3 -u bot.py; elif [ -f index.py ]; then python3 -u index.py; elif [ -f server.py ]; then python3 -u server.py; else python3 -u main.py; fi"];
     }
 
-    if (serverData.eggId && serverData.startupCommand) {
+    if (serverData.eggId && serverData.startupCommand && !isPterodactylVpsEgg) {
       const startup = String(serverData.startupCommand).replace(/\{\{([A-Z_][A-Z0-9_]*)\}\}/g, (_match: string, key: string) => `$${key}`);
       cmd = ["/bin/sh", "-c", startup];
     }
@@ -587,7 +591,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     if (serverData.dockerImage && serverData.dockerImage.includes('pterodactyl')) {
       binds = [`${containerBindPath}:/home/container`];
       workingDir = "/home/container";
-      if (serverData.startupCommand) {
+      if (serverData.startupCommand && !isPterodactylVpsEgg) {
         cmd = ["/bin/sh", "-c", serverData.startupCommand];
       }
     }

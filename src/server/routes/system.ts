@@ -263,7 +263,8 @@ router.put("/settings", async (req, res) => {
     panelName, panelLogo, panelBackgroundImage, panelBackgroundBlur, 
     enablePlayit, enableTutorial, enableLoginAnimation, enableRegistration, theme,
     enableGoogleLogin, firebaseApiKey, firebaseAuthDomain, firebaseProjectId,
-    firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, defaultRuntime 
+    firebaseStorageBucket, firebaseMessagingSenderId, firebaseAppId, defaultRuntime,
+    defaultAllocationHost
   } = req.body;
   const settings = await readJSON("settings.json") || {};
   if (panelName !== undefined) {
@@ -303,6 +304,13 @@ router.put("/settings", async (req, res) => {
   if (firebaseStorageBucket !== undefined) settings.firebaseStorageBucket = firebaseStorageBucket;
   if (firebaseMessagingSenderId !== undefined) settings.firebaseMessagingSenderId = firebaseMessagingSenderId;
   if (firebaseAppId !== undefined) settings.firebaseAppId = firebaseAppId;
+  if (defaultAllocationHost !== undefined) {
+    const host = String(defaultAllocationHost).trim();
+    if (host.length > 253 || /[\s/?#]/.test(host)) {
+      return res.status(400).json({ error: "Default allocation must be a hostname or IP address without a protocol or path." });
+    }
+    settings.defaultAllocationHost = host;
+  }
 
   if (defaultRuntime !== undefined) {
     const isDevPanel = (process.env.PANEL_TYPE === "dev" || process.env.PORT === "3000") && !process.env.FORCE_MAIN_PANEL;
@@ -314,7 +322,7 @@ router.put("/settings", async (req, res) => {
 
   await writeJSON("settings.json", settings);
   req.app.get("io")?.emit("settings_updated");
-  res.json({ success: true, defaultRuntime: settings.defaultRuntime });
+  res.json({ success: true, defaultRuntime: settings.defaultRuntime, defaultAllocationHost: settings.defaultAllocationHost || "" });
 });
 
 router.post("/update", async (req, res) => {
