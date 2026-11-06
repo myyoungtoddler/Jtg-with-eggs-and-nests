@@ -58,6 +58,7 @@ router.post("/:id/backups/:filename/restore", restoreBackup);
 
 import { getContainerLogs } from "../services/docker.js";
 import { getLocalServerLogs } from "../services/local.js";
+import { hasServerPermission } from "../utils/serverAccess.js";
 
 router.get("/:id/logs", async (req, res) => {
   try {
@@ -66,6 +67,7 @@ router.get("/:id/logs", async (req, res) => {
     const servers = JSON.parse(serversJSON);
     const server = servers.find((s: any) => s.id === id);
     if (!server) return res.status(404).json({ error: "Server not found" });
+    if (!hasServerPermission(server, (req as any).user, "console")) return res.status(403).json({ error: "Console access required" });
 
     let logs = "";
     const localLogs = await getLocalServerLogs(id);
@@ -242,6 +244,7 @@ router.post("/:id/subusers", async (req, res) => {
     }
 
     await writeJSON("servers.json", servers);
+    req.app.get("io")?.to(`user_${userId}`).emit("server_access_updated", { serverId: id, access: true });
     res.json({ success: true, subUsers: servers[serverIndex].subUsers });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -264,6 +267,9 @@ router.delete("/:id/subusers/:userId", async (req, res) => {
     servers[serverIndex].subUsers = servers[serverIndex].subUsers.filter((su: any) => su.userId !== userId);
 
     await writeJSON("servers.json", servers);
+  const io = req.app.get("io");
+  io?.in(`user_${userId}`).socketsLeave(`server_${id}`);
+  io?.to(`user_${userId}`).emit("server_access_updated", { serverId: id, access: false });
     res.json({ success: true, subUsers: servers[serverIndex].subUsers });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

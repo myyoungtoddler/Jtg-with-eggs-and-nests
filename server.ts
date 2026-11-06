@@ -32,17 +32,26 @@ if (!fs.existsSync(path.join(DATA_DIR, "settings.json"))) fs.writeFileSync(path.
 import { attachContainerSocket, getContainerLogs } from "./src/server/services/docker.js";
 import { panelEvents } from "./src/server/events.js";
 import { getLocalServerLogs } from "./src/server/services/local.js";
+import { hasServerPermission } from "./src/server/utils/serverAccess.js";
 
 panelEvents.on("log", (serverId: string, logData: string) => {
   io.to(`server_${serverId}`).emit("log", logData);
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error("Authentication error"));
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET || "jtg-panel-super-secret");
-    (socket as any).user = verified;
+    const verified: any = jwt.verify(token, process.env.JWT_SECRET || "jtg-panel-super-secret");
+    if (verified.id !== "temp-admin") {
+      const users = await fs.readJson(path.join(DATA_DIR, "users.json")).catch(() => []);
+      const user = users.find((entry: any) => entry.id === verified.id);
+      if (!user || (user.passwordVersion || 0) !== (verified.passwordVersion || 0)) {
+        return next(new Error("Authentication error"));
+      }
+      verified.role = user.role;
+    }
+    socket.data.user = verified;
     next();
   } catch (err) {
     next(new Error("Authentication error"));
@@ -50,14 +59,19 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  const user = socket.data.user;
+  if (user?.id) socket.join(`user_${user.id}`);
+
   socket.on("joinServer", async (serverId) => {
-    socket.join(`server_${serverId}`);
-    
-    // Stream initial logs whether local runtime or docker
     try {
       const serversJSON = await fs.readFile(path.join(DATA_DIR, "servers.json"), "utf8");
       const servers = JSON.parse(serversJSON);
       const server = Array.isArray(servers) ? servers.find((s: any) => s.id === serverId) : null;
+      if (!server || !hasServerPermission(server, user, "console")) {
+        socket.emit("server_access_denied", { serverId });
+        return;
+      }
+      socket.join(`server_${serverId}`);
       
       // Check local logs first
       const localLogs = await getLocalServerLogs(serverId);

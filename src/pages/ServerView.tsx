@@ -48,12 +48,22 @@ export default function ServerView() {
   };
 
   useEffect(() => {
+    const handleAccessUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ serverId: string; access: boolean }>).detail;
+      if (detail?.serverId !== id) return;
+      if (detail.access) void fetchServer();
+      else setServer(null);
+    };
     fetchServer();
     axios.get("/api/system/stats").then(res => {
       setTotalSystemRam(res.data.totalMemory / (1024 * 1024 * 1024));
     }).catch(() => {});
     const interval = setInterval(fetchServer, 5000);
-    return () => clearInterval(interval);
+    window.addEventListener("server-access-updated", handleAccessUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("server-access-updated", handleAccessUpdate);
+    };
   }, [id]);
 
   const executeAction = async (action: string) => {

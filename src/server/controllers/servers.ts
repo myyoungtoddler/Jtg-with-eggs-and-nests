@@ -16,6 +16,9 @@ import { getLocalProcessInfo } from "../services/local.js";
 import { createSftpUser, deleteSftpUser } from "../services/sftp.js";
 import { downloadJar } from "../services/jarDownloader.js";
 import { getJavaVersionForMinecraft } from "../../utils/minecraftJava.js";
+import { findEgg } from "../../utils/eggCatalog.js";
+import { getEggNests } from "../services/eggCatalog.js";
+import { canAccessServer, hasServerPermission } from "../utils/serverAccess.js";
 import { isSandbox, isNodeSandbox, checkNodeSandbox } from "../services/docker.js";
 import crypto from "crypto";
 import fs from "fs-extra";
@@ -31,7 +34,7 @@ export const getServers = async (req: Request, res: Response) => {
   const servers = await readJSON("servers.json") || [];
   
   // Filter for normal users
-  const userServers = user.role === "admin" || user.role === "owner" ? servers : servers.filter((s: any) => s.owner === user.id);
+  const userServers = servers.filter((server: any) => canAccessServer(server, user));
 
   // Update statuses
   const updatedServers = await Promise.all(userServers.map(async (server: any) => {
@@ -64,7 +67,7 @@ export const getServer = async (req: Request, res: Response) => {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-  if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+  if (!canAccessServer(server, user)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -92,7 +95,7 @@ export const getServerStats = async (req: Request, res: Response) => {
     res.status(404).json({ error: "Server not found" });
     return;
   }
-  if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+  if (!canAccessServer(server, user)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -158,7 +161,34 @@ export const createServer = async (req: Request, res: Response) => {
   if (user.role !== "admin" && user.role !== "owner") {
     return res.status(403).json({ error: "Only admins can create servers" });
   }
-  let { name, ram, port, version, theme, cpu, disk, owner, ownerId, ipAlias, type, nodeId, runtimeType, javaVersion } = req.body;
+  let { name, ram, port, version, theme, cpu, disk, owner, ownerId, ipAlias, type, nodeId, runtimeType, javaVersion, nestId, eggId, eggEnvironment: requestedEggEnvironment, eggDockerImage: requestedEggDockerImage } = req.body;
+  const eggNests = await getEggNests();
+  const legacyType = String(type || "paper").toLowerCase();
+  const legacyEggId = legacyType === "node" ? "nodejs" : legacyType === "python3" ? "python" : legacyType;
+  const legacyEgg = findEgg(eggNests, legacyEggId);
+  const selectedEgg = eggId ? findEgg(eggNests, String(eggId)) : legacyEgg;
+  if (eggId && !selectedEgg) {
+    return res.status(400).json({ error: "Unknown egg selected." });
+  }
+  if (selectedEgg && nestId && selectedEgg.nestId !== nestId) {
+    return res.status(400).json({ error: "Selected egg does not belong to this nest." });
+  }
+  if (selectedEgg && eggId && type && selectedEgg.type !== String(type).toLowerCase()) {
+    return res.status(400).json({ error: "Selected egg does not match the requested software type." });
+  }
+  if (requestedEggDockerImage && !selectedEgg?.dockerImages.includes(String(requestedEggDockerImage))) {
+    return res.status(400).json({ error: "Selected image is not available for this egg." });
+  }
+  if (selectedEgg) {
+    type = selectedEgg.type;
+    nestId = selectedEgg.nestId;
+    eggId = selectedEgg.id;
+  }
+  const eggEnvironment = Object.fromEntries((selectedEgg?.variables || []).map(variable => {
+    const requestedValue = requestedEggEnvironment?.[variable.envVariable];
+    const value = variable.userEditable && requestedValue !== undefined ? String(requestedValue) : variable.defaultValue;
+    return [variable.envVariable, value.slice(0, 8192)];
+  }));
   const settings = await readJSON("settings.json") || {};
   const isDevPanel = (process.env.PANEL_TYPE === "dev" || process.env.PORT === "3000") && !process.env.FORCE_MAIN_PANEL;
   if (!isDevPanel) {
@@ -183,6 +213,13 @@ export const createServer = async (req: Request, res: Response) => {
     runtimeType: runtimeType || "docker",
     nodeId: nodeId || "local",
     type: type || "PAPER",
+    nestId: nestId || selectedEgg?.nestId || null,
+    eggId: eggId || selectedEgg?.id || null,
+    eggName: selectedEgg?.name || null,
+    eggRuntime: selectedEgg?.runtime || null,
+    dockerImage: requestedEggDockerImage || selectedEgg?.dockerImages[0] || "",
+    startupCommand: selectedEgg?.startup || "",
+    eggEnvironment,
     version: version || "26.3",
     javaVersion: javaVersion || "",
     theme: theme || "default",
@@ -233,7 +270,7 @@ export const createServer = async (req: Request, res: Response) => {
       if (!fs.existsSync(reqPath)) {
         await fs.writeFile(reqPath, "# Add python dependencies here\n");
       }
-    } else {
+    } else if (selectedEgg?.runtime !== "generic") {
       // Minecraft Server Pre-seeding
       const eulaPath = path.join(serverDir, "eula.txt");
       if (!fs.existsSync(eulaPath)) {
@@ -371,7 +408,7 @@ export const startServer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+    if (!hasServerPermission(server, user, "start")) {
       return res.status(403).json({ error: "Forbidden: You do not have permission to manage this server" });
     }
 
@@ -402,7 +439,7 @@ export const startServer = async (req: Request, res: Response) => {
 
     // Ensure server.jar is present for Minecraft servers before boot
     const upperType = (server.type || "PAPER").toUpperCase();
-    if (!["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(upperType)) {
+    if (server.eggRuntime !== "generic" && !["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(upperType)) {
       const jarPath = path.join(serverDir, "server.jar");
       if (!fs.existsSync(jarPath)) {
         try {
@@ -500,7 +537,7 @@ export const stopServer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+    if (!hasServerPermission(server, user, "stop")) {
       return res.status(403).json({ error: "Forbidden: You do not have permission to manage this server" });
     }
 
@@ -552,7 +589,7 @@ export const killServer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+    if (!hasServerPermission(server, user, "kill")) {
       return res.status(403).json({ error: "Forbidden: You do not have permission to manage this server" });
     }
 
@@ -589,7 +626,7 @@ export const restartServer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+    if (!hasServerPermission(server, user, "restart")) {
       return res.status(403).json({ error: "Forbidden: You do not have permission to manage this server" });
     }
 
@@ -659,7 +696,7 @@ export const sendCommand = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Server not found" });
     }
 
-    if (user.role !== "admin" && user.role !== "owner" && server.owner !== user.id) {
+    if (!hasServerPermission(server, user, "console")) {
       return res.status(403).json({ error: "Forbidden: You do not have permission to send commands to this server" });
     }
 

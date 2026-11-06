@@ -42,6 +42,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     if (path === '/servers/create') return 'Deploy Server';
     if (path.startsWith('/servers/')) return 'Server Management';
     if (path === '/admin/servers') return 'Fleet';
+    if (path === '/admin/eggs') return 'Nests & Eggs';
     if (path === '/account') return 'Account';
     if (path === '/api-keys') return 'API Keys';
     return '';

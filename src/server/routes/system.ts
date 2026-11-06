@@ -208,6 +208,20 @@ router.put("/users/:id/role", async (req, res) => {
 
   users[targetIndex].role = newRole;
   await writeJSON("users.json", users);
+  const io = req.app.get("io");
+  if (io) {
+    const userRoom = `user_${req.params.id}`;
+    const sockets = await io.in(userRoom).fetchSockets();
+    for (const socket of sockets) {
+      if (socket.data.user) socket.data.user.role = newRole;
+      if (newRole !== "admin" && newRole !== "owner") {
+        for (const room of socket.rooms) {
+          if (room.startsWith("server_")) socket.leave(room);
+        }
+      }
+    }
+    io.to(userRoom).emit("account_role_changed", { role: newRole });
+  }
   res.json({ success: true, role: newRole });
 });
 

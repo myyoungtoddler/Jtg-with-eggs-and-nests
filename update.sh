@@ -23,6 +23,8 @@ GRAY='\033[38;5;242m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+JTG_REPOSITORY="${JTG_REPOSITORY:-https://github.com/myyoungtoddler/Jtg-with-eggs-and-nests.git}"
+
 print_banner() {
     if [ -t 1 ]; then
         clear 2>/dev/null || true
@@ -158,6 +160,11 @@ fi
 
 NEW_VERSION="3.0.0"
 if [ -d ".git" ]; then
+    if git remote get-url origin >/dev/null 2>&1; then
+        git remote set-url origin "$JTG_REPOSITORY"
+    else
+        git remote add origin "$JTG_REPOSITORY"
+    fi
     git fetch origin >/dev/null 2>&1 || true
     NEW_VERSION=$(git show origin/main:package.json 2>/dev/null | grep -o '"version": "[^"]*"' | head -1 | cut -d'"' -f4 || echo "3.0.0")
 fi

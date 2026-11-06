@@ -364,7 +364,8 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   const serverType = (serverData.type || "PAPER").toUpperCase();
   const isNode = ["NODEJS", "NODE"].includes(serverType);
   const isPython = ["PYTHON", "PYTHON3"].includes(serverType);
-  const isGenericApp = isNode || isPython;
+  const isEggGeneric = serverData.eggRuntime === "generic";
+  const isGenericApp = isNode || isPython || isEggGeneric;
   const isProxy = ["VELOCITY", "BUNGEECORD", "WATERFALL"].includes(serverType);
   
   const effectiveJava = serverData.javaVersion || getJavaVersionForMinecraft(serverData.version || "1.21.4", serverData.type);
@@ -504,6 +505,13 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       `PYTHONUNBUFFERED=1`,
       `MEMORY=${serverData.ram}G`
     ];
+  } else if (isEggGeneric) {
+    envVars = [
+      `PORT=${serverData.port}`,
+      `SERVER_PORT=${serverData.port}`,
+      `SERVER_MEMORY=${Number(serverData.ram || 1) * 1024}`,
+      `MEMORY=${serverData.ram}G`
+    ];
   } else {
     envVars = [
       `TYPE=${serverType}`,
@@ -511,6 +519,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       `MEMORY=${serverData.ram}G`,
       `INIT_MEMORY=128M`,
       `SERVER_PORT=${serverData.port}`,
+      `SERVER_MEMORY=${Number(serverData.ram || 1) * 1024}`,
       `SERVER_JARFILE=server.jar`,
     ];
 
@@ -548,6 +557,12 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     }
   }
 
+  for (const [key, value] of Object.entries(serverData.eggEnvironment || {})) {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) continue;
+    envVars = envVars.filter(entry => entry.slice(0, entry.indexOf("=")) !== key);
+    envVars.push(`${key}=${String(value)}`);
+  }
+
   const buildContainerOptions = (img: string) => {
     let binds = [`${containerBindPath}:${isGenericApp ? '/app' : (isProxy ? '/server' : '/data')}`];
     let workingDir = isGenericApp ? "/app" : undefined;
@@ -557,6 +572,16 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       cmd = ["/bin/sh", "-c", serverData.startupCommand || "if [ -f package.json ]; then npm install --omit=dev && npm start; elif [ -f index.js ]; then node index.js; elif [ -f app.js ]; then node app.js; elif [ -f server.js ]; then node server.js; elif [ -f main.js ]; then node main.js; else echo 'Starting Node.js server...'; node index.js; fi"];
     } else if (isPython) {
       cmd = ["/bin/sh", "-c", serverData.startupCommand || "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if [ -f main.py ]; then python3 -u main.py; elif [ -f app.py ]; then python3 -u app.py; elif [ -f bot.py ]; then python3 -u bot.py; elif [ -f index.py ]; then python3 -u index.py; elif [ -f server.py ]; then python3 -u server.py; else python3 -u main.py; fi"];
+    }
+
+    if (serverData.eggId && serverData.startupCommand) {
+      const startup = String(serverData.startupCommand).replace(/\{\{([A-Z_][A-Z0-9_]*)\}\}/g, (_match: string, key: string) => `$${key}`);
+      cmd = ["/bin/sh", "-c", startup];
+    }
+
+    if (isEggGeneric && !isNode && !isPython) {
+      binds = [`${containerBindPath}:/home/container`];
+      workingDir = "/home/container";
     }
     
     if (serverData.dockerImage && serverData.dockerImage.includes('pterodactyl')) {

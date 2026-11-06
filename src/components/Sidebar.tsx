@@ -15,7 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Package
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
@@ -125,6 +126,17 @@ export function Sidebar({ onClose, isCollapsed, toggleCollapse }: SidebarProps) 
                   bg: "bg-amber-500/10",
                   border: "border-amber-400",
                   glow: "shadow-[0_0_12px_rgba(245,158,11,0.3)]",
+                },
+              },
+              {
+                name: "Nests & Eggs",
+                path: "/admin/eggs",
+                icon: <Package size={18} />,
+                color: {
+                  text: "text-lime-400",
+                  bg: "bg-lime-500/10",
+                  border: "border-lime-400",
+                  glow: "shadow-[0_0_12px_rgba(132,204,22,0.3)]",
                 },
               },
               {

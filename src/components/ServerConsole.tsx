@@ -259,6 +259,22 @@ export default function ServerConsole({ serverId, server }: ServerConsoleProps) 
       socket.emit("joinServer", serverId);
     });
 
+    socket.on("server_access_updated", (detail: { serverId: string; access: boolean }) => {
+      if (detail?.serverId !== serverId) return;
+      if (detail.access) {
+        socket.emit("joinServer", serverId);
+      } else {
+        socket.emit("leaveServer", serverId);
+        setLogs([]);
+        lastRawLogsRef.current = "";
+      }
+    });
+    socket.on("server_access_denied", (detail: { serverId: string }) => {
+      if (detail?.serverId !== serverId) return;
+      setLogs([]);
+      lastRawLogsRef.current = "";
+    });
+
     socket.on("clear_logs", () => {
       setLogs([]);
       lastRawLogsRef.current = "";

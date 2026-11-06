@@ -55,11 +55,6 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    if (decoded.role !== 'admin' && decoded.role !== 'owner') {
-       res.status(403).json({ error: "Forbidden: Admin access only" });
-       return;
-    }
-    
     if (decoded.id !== "temp-admin") {
       const { readJSON } = await import("../services/db.js");
       const users = await readJSON("users.json") || [];
@@ -72,6 +67,11 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
         res.status(401).json({ error: "Session expired" });
         return;
       }
+      decoded.role = user.role;
+    }
+    if (decoded.role !== 'admin' && decoded.role !== 'owner') {
+      res.status(403).json({ error: "Forbidden: Admin access only" });
+      return;
     }
     
     (req as any).user = decoded;
@@ -149,6 +149,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         res.status(401).json({ error: "Session expired" });
         return;
       }
+      decoded.role = user.role;
     }
     
     (req as any).user = decoded;

@@ -4,11 +4,12 @@ import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import CategorizedVersionDropdown from "../components/CategorizedVersionDropdown";
 import { getJavaVersionForMinecraft } from "../utils/minecraftJava";
+import { DEFAULT_EGG_NESTS, EggDefinition, EggNest, findEgg } from "../utils/eggCatalog";
 import {
   ArrowLeft, Server, AlertTriangle, AlignLeft, MemoryStick as MemoryStickIcon,
   Cpu, Zap, Sparkles, HardDrive, Globe, User, Radio, GitBranch, Check,
   ChevronDown, Search, Rocket, SlidersHorizontal, FastForward, Network,
-  Wrench, Feather, Info, Code2, TerminalSquare, Lock
+  Wrench, Feather, Info, Code2, TerminalSquare, Lock, Package
 } from "lucide-react";
 
 const pageStyles = `
@@ -193,6 +194,7 @@ export default function CreateServer() {
   const [nodes, setNodes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [versions, setVersions] = useState<string[]>([]);
+  const [nests, setNests] = useState<EggNest[]>([]);
   
   // Form State
   const [currentStep, setCurrentStep] = useState(0);
@@ -207,8 +209,12 @@ export default function CreateServer() {
   
   const [state, setState] = useState({
     name: '', desc: '', ram: 4, cpu: 150, disk: 10, ip: '', port: 25565, runtimeType: defaultRuntime || 'docker', 
-    owner: user?.id || '', node: '', software: 'paper', version: '26.3', auto: true
+    owner: user?.id || '', node: '', nestId: 'minecraft', eggId: 'paper', software: 'paper', version: '26.3', eggDockerImage: '', eggEnvironment: {} as Record<string, string>, auto: true
   });
+
+  const selectedNest = nests.find(nest => nest.id === state.nestId);
+  const selectedEgg = findEgg(nests, state.eggId);
+  const eggOptions = selectedNest?.eggs || [];
 
   useEffect(() => {
     if (defaultRuntime) {
@@ -263,6 +269,22 @@ export default function CreateServer() {
         setState(s => ({ ...s, node: res.data[0].id }));
       }
     }).catch(() => {});
+
+    axios.get<EggNest[]>("/api/eggs").then(({ data }) => {
+      const availableNests = Array.isArray(data) ? data : [];
+      setNests(availableNests);
+      const initialEgg = findEgg(availableNests, state.eggId) || availableNests[0]?.eggs[0];
+      if (initialEgg) {
+        setState(current => ({
+          ...current,
+          nestId: initialEgg.nestId,
+          eggId: initialEgg.id,
+          software: initialEgg.type,
+          eggDockerImage: initialEgg.dockerImages[0] || "",
+          version: "latest"
+        }));
+      }
+    }).catch(() => setNests(DEFAULT_EGG_NESTS));
     
     if (user?.role === "admin" || user?.role === "owner") {
       axios.get("/api/auth/users").then((res) => setUsers(res.data)).catch(() => {});
@@ -274,8 +296,14 @@ export default function CreateServer() {
   }, []);
 
   useEffect(() => {
+    if (!selectedEgg) return;
     setState(s => ({ ...s, version: '' }));
-    axios.get(`/api/system/versions?type=${state.software}`).then((res) => {
+    if (!SOFTWARE.some(software => software.id === selectedEgg.type)) {
+      setVersions(['latest']);
+      setState(s => ({ ...s, version: 'latest' }));
+      return;
+    }
+    axios.get(`/api/system/versions?type=${selectedEgg.type}`).then((res) => {
       const v = Array.isArray(res.data) ? res.data : (res.data.versions || []);
       setVersions(v);
       if (v.length > 0) {
@@ -285,7 +313,15 @@ export default function CreateServer() {
       setVersions(['latest']);
       setState(s => ({ ...s, version: 'latest' }));
     });
-  }, [state.software]);
+  }, [selectedEgg?.id, nests]);
+
+  useEffect(() => {
+    if (!selectedEgg) return;
+    setState(current => ({
+      ...current,
+      eggEnvironment: Object.fromEntries(selectedEgg.variables.map(variable => [variable.envVariable, variable.defaultValue]))
+    }));
+  }, [selectedEgg?.id, nests]);
 
   const updateState = (key: string, val: any) => {
     setState(prev => ({ ...prev, [key]: val }));
@@ -371,6 +407,10 @@ export default function CreateServer() {
         diskLimit: state.disk,
         port: state.port,
         ipAlias: state.ip,
+        nestId: state.nestId,
+        eggId: state.eggId,
+        eggEnvironment: state.eggEnvironment,
+        eggDockerImage: state.eggDockerImage,
         type: state.software,
         version: state.version,
         ownerId: state.owner || user?.id, runtimeType: state.runtimeType,
@@ -812,83 +852,136 @@ export default function CreateServer() {
                 </div>
               )}
 
-              {/* STEP 4: SOFTWARE */}
+              {/* STEP 4: NEST & EGG */}
               {currentStep === 3 && (
                 <div className="step-content space-y-6">
                   <div>
                     <div className="flex items-center gap-3 mb-4">
                       <span className="font-mono text-xs text-[#4c4c4c]">04A</span>
-                      <h2 className="font-display font-bold tracking-wide text-sm text-white">MINECRAFT ENGINES</h2>
+                      <h2 className="font-display font-bold tracking-wide text-sm text-white">NEST</h2>
                       <span className="flex-1 h-px bg-[#232323]"></span>
                     </div>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                      {MINECRAFT_SOFTWARE.map(s => {
-                        const Icon = s.icon;
-                        return (
-                          <button 
-                            key={s.id} 
-                            type="button" 
-                            onClick={() => updateState('software', s.id)}
-                            className={`sel-card soft-card p-4 flex flex-col items-center text-center ${state.software === s.id ? 'selected' : ''}`}
-                          >
-                            <span className="tick"><Check className="w-3 h-3 stroke-[3]" /></span>
-                            <Icon className="ic w-6 h-6 mb-2.5" />
-                            <span className="font-display font-semibold text-sm text-white">{s.name}</span>
-                            <span className="text-[10px] text-[#4c4c4c] mt-1 leading-tight">{s.desc}</span>
-                          </button>
-                        );
-                      })}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {nests.map(nest => (
+                        <button
+                          key={nest.id}
+                          type="button"
+                          onClick={() => {
+                            const firstEgg = nest.eggs[0];
+                            setState(current => ({
+                              ...current,
+                              nestId: nest.id,
+                              eggId: firstEgg?.id || '',
+                              software: firstEgg?.type || 'custom',
+                              eggDockerImage: firstEgg?.dockerImages[0] || '',
+                              version: 'latest',
+                              eggEnvironment: Object.fromEntries((firstEgg?.variables || []).map(variable => [variable.envVariable, variable.defaultValue]))
+                            }));
+                          }}
+                          className={`sel-card p-4 text-left ${state.nestId === nest.id ? 'selected' : ''}`}
+                        >
+                          <span className="tick"><Check className="w-3 h-3 stroke-[3]" /></span>
+                          <span className="block font-display font-bold text-sm text-white">{nest.name}</span>
+                          <span className="block text-[11px] text-[#8f8f8f] mt-1">{nest.eggs.length} eggs</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   <div>
                     <div className="flex items-center gap-3 mb-4">
                       <span className="font-mono text-xs text-[#4c4c4c]">04B</span>
-                      <h2 className="font-display font-bold tracking-wide text-sm text-white">APPLICATION & SCRIPT RUNTIMES</h2>
-                      <span className="text-[10px] font-mono uppercase bg-white/10 px-2 py-0.5 rounded text-white tracking-widest">Non-Minecraft</span>
+                      <h2 className="font-display font-bold tracking-wide text-sm text-white">EGG</h2>
                       <span className="flex-1 h-px bg-[#232323]"></span>
                     </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {APPLICATION_SOFTWARE.map(s => {
-                        const Icon = s.icon;
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {eggOptions.map(egg => {
+                        const presentation = SOFTWARE.find(software => software.id === egg.type);
+                        const Icon = presentation?.icon || Package;
                         return (
                           <button 
-                            key={s.id} 
+                            key={egg.id}
                             type="button" 
-                            onClick={() => updateState('software', s.id)}
-                            className={`sel-card soft-card p-4 flex items-center gap-4 text-left ${state.software === s.id ? 'selected' : ''}`}
+                            onClick={() => {
+                              setState(current => ({
+                                ...current,
+                                nestId: egg.nestId,
+                                eggId: egg.id,
+                                software: egg.type,
+                                eggDockerImage: egg.dockerImages[0] || '',
+                                version: 'latest',
+                                eggEnvironment: Object.fromEntries(egg.variables.map(variable => [variable.envVariable, variable.defaultValue]))
+                              }));
+                            }}
+                            className={`sel-card soft-card p-4 flex flex-col items-center text-center ${state.eggId === egg.id ? 'selected' : ''}`}
                           >
                             <span className="tick"><Check className="w-3 h-3 stroke-[3]" /></span>
-                            <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                              <Icon className="ic w-5 h-5 text-white" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-display font-semibold text-sm text-white">{s.name}</span>
-                                <span className="text-[9px] font-mono bg-white/10 text-white/80 px-1.5 py-0.5 rounded">Standalone</span>
-                              </div>
-                              <span className="text-[11px] text-[#8f8f8f] block mt-0.5 leading-snug">{s.desc}</span>
-                            </div>
+                            <Icon className="ic w-6 h-6 mb-2.5" />
+                            <span className="font-display font-semibold text-sm text-white">{egg.name}</span>
+                            <span className="text-[10px] text-[#4c4c4c] mt-1 leading-tight">{egg.description || presentation?.desc || egg.runtime}</span>
                           </button>
                         );
                       })}
                     </div>
-
-                    {['nodejs', 'python'].includes(state.software) && (
-                      <div className="mt-3 p-3 bg-white/[0.03] border border-white/10 rounded-lg flex items-start gap-2.5">
-                        <Info className="w-4 h-4 text-[#8f8f8f] shrink-0 mt-0.5" />
-                        <p className="text-xs text-[#8f8f8f] font-mono leading-relaxed">
-                          Standalone runtime selected: Minecraft game features will be disabled. You will be able to upload your code files (such as <span className="text-white">index.js</span> or <span className="text-white">main.py</span>) via File Manager and start them in the Console.
-                        </p>
-                      </div>
-                    )}
                   </div>
 
                   <div>
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="font-mono text-xs text-[#4c4c4c]">04C</span>
+                      <h2 className="font-display font-bold tracking-wide text-sm text-white">EGG DETAILS</h2>
+                      <span className="flex-1 h-px bg-[#232323]"></span>
+                    </div>
+
+                    {selectedEgg?.runtime === 'generic' && (
+                      <div className="mt-3 p-3 bg-white/[0.03] border border-white/10 rounded-lg flex items-start gap-2.5">
+                        <Info className="w-4 h-4 text-[#8f8f8f] shrink-0 mt-0.5" />
+                        <p className="text-xs text-[#8f8f8f] font-mono leading-relaxed">
+                          Generic application egg selected. This server will use the egg's container image and startup command.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      {(selectedEgg?.dockerImages.length || 0) > 0 && (
+                        <label className="block">
+                          <span className="block text-sm text-[#8f8f8f] mb-2">Container image</span>
+                          <select value={state.eggDockerImage} onChange={event => updateState('eggDockerImage', event.target.value)} className="inp font-mono">
+                            {selectedEgg?.dockerImages.map(image => <option key={image} value={image}>{image}</option>)}
+                          </select>
+                        </label>
+                      )}
+                      {selectedEgg?.variables.filter(variable => variable.userViewable).map(variable => (
+                        <label key={variable.envVariable} className="block">
+                          <span className="block text-sm text-[#8f8f8f] mb-2">{variable.name}</span>
+                          {variable.fieldType === 'boolean' ? (
+                            <input
+                              type="checkbox"
+                              checked={String(state.eggEnvironment[variable.envVariable] ?? variable.defaultValue).toLowerCase() === 'true'}
+                              disabled={!variable.userEditable}
+                              onChange={event => setState(current => ({ ...current, eggEnvironment: { ...current.eggEnvironment, [variable.envVariable]: String(event.target.checked) } }))}
+                              className="h-4 w-4 accent-white"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={state.eggEnvironment[variable.envVariable] ?? variable.defaultValue}
+                              disabled={!variable.userEditable}
+                              onChange={event => setState(current => ({ ...current, eggEnvironment: { ...current.eggEnvironment, [variable.envVariable]: event.target.value } }))}
+                              className="inp font-mono"
+                            />
+                          )}
+                          <span className="block text-[10px] text-[#4c4c4c] mt-1 font-mono">{variable.envVariable}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectedEgg && SOFTWARE.some(software => software.id === selectedEgg.type) && (
+                  <div>
                     <label className="flex items-center gap-2 text-sm text-[#8f8f8f] mb-2.5">
-                      <GitBranch className="w-4 h-4" /> {['nodejs', 'python'].includes(state.software) ? 'Runtime Version' : 'Software Version'}
+                      <GitBranch className="w-4 h-4" /> {['nodejs', 'python'].includes(selectedEgg.type) ? 'Runtime Version' : 'Software Version'}
                     </label>
 
                     <CategorizedVersionDropdown
@@ -898,13 +991,14 @@ export default function CreateServer() {
                       software={state.software}
                       placeholder="Select a version..."
                     />
-                    {!['nodejs', 'python'].includes(state.software) && (
+                    {selectedEgg.runtime === 'minecraft' && !['bungeecord', 'velocity'].includes(selectedEgg.type) && (
                       <div className="mt-2.5 flex items-center gap-1.5 text-xs text-emerald-400 font-mono bg-emerald-500/5 px-2.5 py-1.5 rounded-lg border border-emerald-500/10">
                         <Sparkles className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
                         <span>Java Auto-detect: <strong>Java {getJavaVersionForMinecraft(state.version, state.software)}</strong> will be automatically provisioned</span>
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               )}
 
@@ -930,6 +1024,8 @@ export default function CreateServer() {
                         {renderReviewRow('IP ALIAS', state.ip || '—')}
                         {(user?.role === "admin" || user?.role === "owner") && renderReviewRow('OWNER ID', state.owner || '—')}
                         {(user?.role === "admin" || user?.role === "owner") && renderReviewRow('NODE ID', state.node || '—')}
+                        {renderReviewRow('NEST', selectedNest?.name || '—')}
+                        {renderReviewRow('EGG', selectedEgg?.name || 'Unknown')}
                         {renderReviewRow('SOFTWARE', SOFTWARE.find(s => s.id === state.software)?.name || 'Unknown')}
                         {renderReviewRow('VERSION', state.version || 'latest')}
                         {!['nodejs', 'python'].includes(state.software) && renderReviewRow('JAVA RUNTIME', `Java ${getJavaVersionForMinecraft(state.version, state.software)} (Auto-detected)`)}

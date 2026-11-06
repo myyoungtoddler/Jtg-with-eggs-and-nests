@@ -7,12 +7,14 @@ import serverRoutes from "./servers.js";
 import systemRoutes from "./system.js";
 import apiKeyRoutes from "./api-keys.js";
 import nodeRoutes from "./nodes.js";
+import eggRoutes from "./eggs.js";
 
 router.use("/auth", authRoutes);
 router.use("/servers", serverRoutes);
 router.use("/system", systemRoutes);
 router.use("/admin/api-keys", apiKeyRoutes);
 router.use("/nodes", nodeRoutes);
+router.use("/eggs", eggRoutes);
 
 router.get("/health", (req, res) => {
   res.json({

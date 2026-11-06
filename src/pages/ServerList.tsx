@@ -90,12 +90,15 @@ function useServers(pollIntervalMs = POLL_INTERVAL_MS): ServersState {
 
   useEffect(() => {
     const controller = new AbortController();
+    const refreshOnAccessChange = () => void fetchServers();
     void fetchServers(controller.signal);
+    window.addEventListener("server-access-updated", refreshOnAccessChange);
     const interval = window.setInterval(
       () => void fetchServers(controller.signal),
       pollIntervalMs,
     );
     return () => {
+      window.removeEventListener("server-access-updated", refreshOnAccessChange);
       controller.abort();
       window.clearInterval(interval);
     };

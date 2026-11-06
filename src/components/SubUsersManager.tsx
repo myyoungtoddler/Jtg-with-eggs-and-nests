@@ -8,8 +8,10 @@ interface SubUsersManagerProps {
 }
 
 const ALL_PERMISSIONS = [
+  { id: "console", label: "Server Console", group: "Power" },
   { id: "start", label: "Start Server", group: "Power" },
   { id: "stop", label: "Stop Server", group: "Power" },
+  { id: "kill", label: "Kill Server", group: "Power" },
   { id: "restart", label: "Restart Server", group: "Power" },
   { id: "files", label: "File Management", group: "Management" },
   { id: "plugins", label: "Plugins Management", group: "Management" },

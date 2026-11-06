@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
+import { io } from "socket.io-client";
 
 export const AuthContext = createContext<any>(null);
 
@@ -23,6 +24,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } else {
       setLoading(false);
     }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = io({ auth: { token }, reconnectionAttempts: 5 });
+    socket.on("server_access_updated", (detail: { serverId: string; access: boolean }) => {
+      window.dispatchEvent(new CustomEvent("server-access-updated", { detail }));
+    });
+    socket.on("account_role_changed", async () => {
+      try {
+        const res = await axios.get("/api/auth/me");
+        setUser(res.data.user);
+      } catch (error) {}
+      window.dispatchEvent(new Event("account-role-updated"));
+    });
+    return () => {
+      socket.disconnect();
+    };
   }, [token]);
 
   useEffect(() => {

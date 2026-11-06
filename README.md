@@ -23,8 +23,8 @@ Menu Options:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/JishnuTheGamer/Jtg.git
-   cd Jtg
+   git clone https://github.com/myyoungtoddler/Jtg-with-eggs-and-nests.git
+   cd Jtg-with-eggs-and-nests
    ```
 
 2. Install dependencies:

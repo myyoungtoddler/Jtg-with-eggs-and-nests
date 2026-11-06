@@ -29,6 +29,8 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
+JTG_REPOSITORY="${JTG_REPOSITORY:-https://github.com/myyoungtoddler/Jtg-with-eggs-and-nests.git}"
+
 # Ensure initial tools exist if cloning is needed
 if [ ! -f "package.json" ] && [ ! -f "Jtg/package.json" ]; then
     echo -e "  \033[38;5;51m⚡ Initializing JTG Panel files...\033[0m"
@@ -42,7 +44,10 @@ if [ ! -f "package.json" ] && [ ! -f "Jtg/package.json" ]; then
             (dnf install -y git curl tar ca-certificates > /dev/null 2>&1 || sudo dnf install -y git curl tar ca-certificates > /dev/null 2>&1 || true)
         fi
     fi
-    git clone https://github.com/JishnuTheGamer/Jtg Jtg 2>/dev/null || git clone https://github.com/JishnuTheGamer/Jtg.git Jtg 2>/dev/null || true
+    if ! git clone "$JTG_REPOSITORY" Jtg; then
+        echo "Failed to clone JTG Panel from $JTG_REPOSITORY"
+        exit 1
+    fi
 fi
 
 if [ -f "package.json" ]; then
