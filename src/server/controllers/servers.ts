@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import axios from "axios";
 import { readJSON, writeJSON } from "../services/db.js";
 import {
   createServerRuntime,
@@ -28,6 +29,17 @@ import extract from "extract-zip";
 import { extractArchive } from "../utils/extract.js";
 
 const serverOperationLocks = new Set<string>();
+const VPS_ENTRYPOINT_URL = "https://raw.githubusercontent.com/ysdragon/Pterodactyl-VPS-Egg/ffd41a4e3810c802b995128520f2f70540d0bc0a/scripts/entrypoint.sh";
+
+const ensureVpsEntrypoint = async (serverDir: string) => {
+  const entrypointPath = path.join(serverDir, "entrypoint.sh");
+  if (await fs.pathExists(entrypointPath)) return;
+  const { data } = await axios.get<string>(VPS_ENTRYPOINT_URL, { responseType: "text", timeout: 15000 });
+  if (typeof data !== "string" || !data.startsWith("#!/bin/sh")) {
+    throw new Error("Downloaded VPS entrypoint is not a valid shell script.");
+  }
+  await fs.writeFile(entrypointPath, data, { mode: 0o755 });
+};
 
 export const getServers = async (req: Request, res: Response) => {
   const user = (req as any).user;
@@ -251,6 +263,7 @@ export const createServer = async (req: Request, res: Response) => {
   try {
     const serverDir = path.join(process.cwd(), ".data", "servers", id);
     await fs.ensureDir(serverDir);
+    if (isVpsEgg) await ensureVpsEntrypoint(serverDir);
     if (String(serverData.dockerImage).toLowerCase().includes("pterodactyl-vps-egg")) {
       const eggJson = selectedEgg?.pterodactylJson as any;
       const configFiles = typeof eggJson?.config?.files === "string" ? JSON.parse(eggJson.config.files) : {};
@@ -320,6 +333,13 @@ export const createServer = async (req: Request, res: Response) => {
     }
   } catch (seedErr) {
     console.warn("Failed to pre-seed starter files:", seedErr);
+    if (isVpsEgg) {
+      const failedServerIndex = servers.findIndex((server: any) => server.id === id);
+      if (failedServerIndex !== -1) servers.splice(failedServerIndex, 1);
+      await writeJSON("servers.json", servers);
+      await fs.remove(path.join(process.cwd(), ".data", "servers", id));
+      return res.status(502).json({ error: `Could not prepare VPS startup files: ${String((seedErr as any)?.message || seedErr)}` });
+    }
   }
 
   try {
@@ -465,14 +485,14 @@ export const startServer = async (req: Request, res: Response) => {
 
     // Check if already running
     const currentStatus: any = await getServerRuntimeStatus(server);
-    if (currentStatus?.State?.Running) {
+    const hasVpsAutoInstaller = currentStatus?.Config?.Env?.some((entry: string) => entry === "VPS_INSTALLER_AUTOSTART=3");
+    if (currentStatus?.State?.Running && (!isVpsEgg || hasVpsAutoInstaller)) {
       return res.json({ success: true, message: "Server is already running", startedAt: server.startedAt });
     }
 
     const serverDir = path.join(process.cwd(), ".data", "servers", server.id);
     await fs.ensureDir(serverDir);
-
-    const hasVpsAutoInstaller = currentStatus?.Config?.Env?.some((entry: string) => entry === "VPS_INSTALLER_AUTOSTART=2");
+    if (isVpsEgg) await ensureVpsEntrypoint(serverDir);
     if (isVpsEgg && server.containerId && !hasVpsAutoInstaller) {
       console.log(`[startServer] Recreating legacy VPS container ${server.id} with automatic installer selections.`);
       server.containerId = await createServerRuntime(server);

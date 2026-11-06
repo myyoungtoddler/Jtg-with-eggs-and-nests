@@ -531,7 +531,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
     ];
     if (isPterodactylVpsEgg) {
       envVars.push(`STARTUP=${serverData.startupCommand || ""}`);
-      envVars.push("VPS_INSTALLER_AUTOSTART=2");
+      envVars.push("VPS_INSTALLER_AUTOSTART=3");
     }
   } else {
     envVars = [
@@ -623,7 +623,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       cmd = [
         "/bin/sh",
         "-c",
-        `if [ ! -e "$HOME/.installed" ]; then { ${installerInput}; } | /bin/sh /entrypoint.sh; else exec /bin/sh /entrypoint.sh; fi`
+        `if [ ! -e "$HOME/.installed" ]; then { ${installerInput}; } | /bin/sh /home/container/entrypoint.sh; else exec /bin/sh /home/container/entrypoint.sh; fi`
       ];
     }
     
