@@ -35,12 +35,20 @@ const VPS_SCRIPTS = ["entrypoint.sh", "install.sh", "helper.sh"] as const;
 const ensureVpsEntrypoint = async (serverDir: string) => {
   for (const scriptName of VPS_SCRIPTS) {
     const scriptPath = path.join(serverDir, scriptName);
-    if (await fs.pathExists(scriptPath)) continue;
-    const { data } = await axios.get<string>(`${VPS_SCRIPT_BASE_URL}/${scriptName}`, { responseType: "text", timeout: 15000 });
+    const exists = await fs.pathExists(scriptPath);
+    if (exists && scriptName !== "entrypoint.sh") continue;
+    const data = exists
+      ? await fs.readFile(scriptPath, "utf8")
+      : (await axios.get<string>(`${VPS_SCRIPT_BASE_URL}/${scriptName}`, { responseType: "text", timeout: 15000 })).data;
     if (typeof data !== "string" || !data.startsWith("#!/bin/sh")) {
       throw new Error(`Downloaded VPS ${scriptName} is not a valid shell script.`);
     }
-    await fs.writeFile(scriptPath, data, { mode: 0o755 });
+    const content = scriptName === "entrypoint.sh"
+      ? data.replace('/bin/sh "/install.sh"', '/bin/sh "/home/container/install.sh"').replace("sh /helper.sh", "sh /home/container/helper.sh")
+      : data;
+    if (!exists || content !== data) {
+      await fs.writeFile(scriptPath, content, { mode: 0o755 });
+    }
   }
 };
 
