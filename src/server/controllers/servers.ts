@@ -32,20 +32,125 @@ const serverOperationLocks = new Set<string>();
 const VPS_SCRIPT_BASE_URL = "https://raw.githubusercontent.com/ysdragon/Pterodactyl-VPS-Egg/ffd41a4e3810c802b995128520f2f70540d0bc0a/scripts";
 const VPS_SCRIPTS = ["entrypoint.sh", "install.sh", "helper.sh"] as const;
 
+const VPS_ROOTFS_FALLBACK_SCRIPT = `
+create_fallback_rootfs() {
+    fallback_rootfs="$ROOTFS_DIR/.fallback-rootfs"
+    mkdir -p "$fallback_rootfs/etc/apk" "$fallback_rootfs/home/container" || return 1
+    if ! apk --root="$fallback_rootfs" --initdb --repositories-file /etc/apk/repositories add --no-cache alpine-base sudo shadow; then
+        log "ERROR" "Could not create the Alpine fallback rootfs." "$RED"
+        return 1
+    fi
+    cp /etc/apk/repositories "$fallback_rootfs/etc/apk/repositories" || return 1
+    cp /etc/resolv.conf "$fallback_rootfs/etc/resolv.conf" || return 1
+    cp /common.sh /run.sh "$fallback_rootfs/" || return 1
+    chmod +x "$fallback_rootfs/common.sh" "$fallback_rootfs/run.sh" || return 1
+    if [ -f /vnc_install.sh ]; then
+        cp /vnc_install.sh "$fallback_rootfs/" || return 1
+        chmod +x "$fallback_rootfs/vnc_install.sh" || return 1
+    fi
+}
+
+error_exit() {
+    case "$1" in
+        *rootfs*|*"doesn't support"*|*"latest version"*|*"available versions"*|*"Chimera Linux version"*|*"Unable to connect to $BASE_URL"*)
+            log "WARN" "$1. Starting the Alpine fallback VPS instead." "$YELLOW"
+            if create_fallback_rootfs; then
+                exit 0
+            fi
+            ;;
+    esac
+    log "ERROR" "$1" "$RED"
+    exit 1
+}
+`;
+
+const VPS_USER_SETUP_SCRIPT = `
+configure_vps_user() {
+    rootfs="$1"
+    password=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \\n')
+    [ -n "$password" ] || return 1
+
+    if ! /usr/local/bin/proot --rootfs="$rootfs" -0 -w / -b /dev -b /sys -b /proc -b /etc/resolv.conf:/etc/resolv.conf /bin/sh -c '
+set -e
+if ! command -v sudo >/dev/null 2>&1 || ! command -v useradd >/dev/null 2>&1 || ! command -v chpasswd >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update
+        DEBIAN_FRONTEND=noninteractive apt-get install -y sudo passwd
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache sudo shadow
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y sudo shadow-utils
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y sudo shadow-utils
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm sudo shadow
+    elif command -v zypper >/dev/null 2>&1; then
+        zypper --non-interactive install sudo shadow
+    elif command -v xbps-install >/dev/null 2>&1; then
+        xbps-install -Sy sudo shadow
+    elif command -v emerge >/dev/null 2>&1; then
+        emerge --ask=n app-admin/sudo
+    else
+        echo "No supported package manager is available to install sudo." >&2
+        exit 1
+    fi
+fi
+
+if ! id "$1" >/dev/null 2>&1; then
+    useradd -m -s /bin/sh "$1"
+fi
+printf "%s:%s\\n" "$1" "$2" | chpasswd
+entry="$1 ALL=(ALL:ALL) ALL"
+grep -Fqx "$entry" /etc/sudoers || printf "%s\\n" "$entry" >> /etc/sudoers
+chmod 0440 /etc/sudoers
+printf "\\nVPS sudo user created. Username: %s\\nPassword (shown once): %s\\nSwitch with 'su - %s', then use 'sudo -i'.\\n\\n" "$1" "$2" "$1"
+' sh vpsuser "$password"; then
+        return 1
+    fi
+}
+`;
+
 const ensureVpsEntrypoint = async (serverDir: string) => {
   for (const scriptName of VPS_SCRIPTS) {
     const scriptPath = path.join(serverDir, scriptName);
     const exists = await fs.pathExists(scriptPath);
-    if (exists && scriptName !== "entrypoint.sh") continue;
     const data = exists
       ? await fs.readFile(scriptPath, "utf8")
       : (await axios.get<string>(`${VPS_SCRIPT_BASE_URL}/${scriptName}`, { responseType: "text", timeout: 15000 })).data;
     if (typeof data !== "string" || !data.startsWith("#!/bin/sh")) {
       throw new Error(`Downloaded VPS ${scriptName} is not a valid shell script.`);
     }
-    const content = scriptName === "entrypoint.sh"
-      ? data.replace('/bin/sh "/install.sh"', '/bin/sh "/home/container/install.sh"').replace("sh /helper.sh", "sh /home/container/helper.sh")
-      : data;
+    let content = data;
+    if (scriptName === "entrypoint.sh") {
+      content = content
+        .replace('/bin/sh "/install.sh"', '/bin/sh "/home/container/install.sh"')
+        .replace("sh /helper.sh", "sh /home/container/helper.sh")
+        .replace('if [ ! -e "$HOME/.installed" ]; then', 'if [ ! -e "$HOME/.installed" ] && [ ! -e "$HOME/.fallback-rootfs/.installed" ]; then');
+      if (!content.includes('$HOME/.fallback-rootfs/.installed')) {
+        throw new Error("VPS entrypoint is missing the fallback rootfs install check.");
+      }
+    } else if (scriptName === "install.sh") {
+      content = content
+        .replace('if ! curl -Ls "${url}${latest_version}rootfs.tar.xz" -o "$ROOTFS_DIR/rootfs.tar.xz"; then', 'if ! curl --fail --location --show-error --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 "${url}${latest_version}rootfs.tar.xz" -o "$ROOTFS_DIR/rootfs.tar.xz"; then')
+        .replace('error_exit "Failed to download rootfs"', 'error_exit "Failed to download rootfs from ${url}${latest_version}rootfs.tar.xz"');
+      if (!content.includes("create_fallback_rootfs()")) {
+        content = content.replace("# Initial setup", `${VPS_ROOTFS_FALLBACK_SCRIPT}\n# Initial setup`);
+      }
+      if (!content.includes("Starting the Alpine fallback VPS instead.")) {
+        throw new Error("VPS installer is missing the rootfs fallback handler.");
+      }
+    } else {
+      if (!content.includes("configure_vps_user()")) {
+        content = content.replace("# Execute PRoot environment", `${VPS_USER_SETUP_SCRIPT}\n# Execute PRoot environment`);
+      }
+      content = content.replace(
+        '    port_args=$(parse_ports)\n    \n    /usr/local/bin/proot \\\n    --rootfs="${HOME}"',
+        '    port_args=$(parse_ports)\n    ROOTFS="${HOME}"\n    [ -d "${HOME}/.fallback-rootfs/etc" ] && ROOTFS="${HOME}/.fallback-rootfs"\n    if [ ! -e "$ROOTFS/.vps-user-configured" ]; then\n        configure_vps_user "$ROOTFS" || return 1\n        touch "$ROOTFS/.vps-user-configured" || return 1\n    fi\n    \n    /usr/local/bin/proot \\\n    --rootfs="${ROOTFS}"'
+      );
+      if (!content.includes('configure_vps_user "$ROOTFS"') || !content.includes('${HOME}/.fallback-rootfs/etc')) {
+        throw new Error("VPS helper is missing sudo-user setup or fallback rootfs selection.");
+      }
+    }
     if (!exists || content !== data) {
       await fs.writeFile(scriptPath, content, { mode: 0o755 });
     }
