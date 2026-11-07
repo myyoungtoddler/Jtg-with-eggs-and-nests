@@ -103,7 +103,7 @@ printf "%s:%s\\n" "$1" "$2" | chpasswd
 entry="$1 ALL=(ALL:ALL) ALL"
 grep -Fqx "$entry" /etc/sudoers || printf "%s\\n" "$entry" >> /etc/sudoers
 chmod 0440 /etc/sudoers
-printf "\\nVPS sudo user created. Username: %s\\nPassword (shown once): %s\\nSwitch with 'su - %s', then use 'sudo -i'.\\n\\n" "$1" "$2" "$1"
+printf "\\nVPS sudo user created. Username: %s\\nPassword (shown once): %s\\nSwitch with su - %s, then use sudo -i.\\n\\n" "$1" "$2" "$1"
 ' sh vpsuser "$password"; then
         return 1
     fi
