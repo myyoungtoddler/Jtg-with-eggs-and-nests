@@ -485,6 +485,9 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
   const hostServerDir = path.join(hostDataDir, "servers", serverData.id);
   const containerBindPath = isLocal ? hostServerDir : `/opt/jtg-panel-node/servers/${serverData.id}`;
   await fs.ensureDir(serverDir);
+  const vpsContainerUser = isPterodactylVpsEgg && isLocal
+    ? await fs.stat(serverDir).then(({ uid, gid }) => `${uid}:${gid}`)
+    : undefined;
 
   // For Minecraft servers, ensure eula.txt, server.properties and server.jar are in place
   if (!isGenericApp && !isProxy) {
@@ -633,6 +636,7 @@ export const createServerContainer = async (serverData: any, nodeId?: string) =>
       Tty: true,
       OpenStdin: true,
       StdinOnce: false,
+      User: vpsContainerUser,
       Env: envVars,
       WorkingDir: workingDir,
       Cmd: cmd,
