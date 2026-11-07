@@ -29,16 +29,19 @@ import extract from "extract-zip";
 import { extractArchive } from "../utils/extract.js";
 
 const serverOperationLocks = new Set<string>();
-const VPS_ENTRYPOINT_URL = "https://raw.githubusercontent.com/ysdragon/Pterodactyl-VPS-Egg/ffd41a4e3810c802b995128520f2f70540d0bc0a/scripts/entrypoint.sh";
+const VPS_SCRIPT_BASE_URL = "https://raw.githubusercontent.com/ysdragon/Pterodactyl-VPS-Egg/ffd41a4e3810c802b995128520f2f70540d0bc0a/scripts";
+const VPS_SCRIPTS = ["entrypoint.sh", "install.sh", "helper.sh"] as const;
 
 const ensureVpsEntrypoint = async (serverDir: string) => {
-  const entrypointPath = path.join(serverDir, "entrypoint.sh");
-  if (await fs.pathExists(entrypointPath)) return;
-  const { data } = await axios.get<string>(VPS_ENTRYPOINT_URL, { responseType: "text", timeout: 15000 });
-  if (typeof data !== "string" || !data.startsWith("#!/bin/sh")) {
-    throw new Error("Downloaded VPS entrypoint is not a valid shell script.");
+  for (const scriptName of VPS_SCRIPTS) {
+    const scriptPath = path.join(serverDir, scriptName);
+    if (await fs.pathExists(scriptPath)) continue;
+    const { data } = await axios.get<string>(`${VPS_SCRIPT_BASE_URL}/${scriptName}`, { responseType: "text", timeout: 15000 });
+    if (typeof data !== "string" || !data.startsWith("#!/bin/sh")) {
+      throw new Error(`Downloaded VPS ${scriptName} is not a valid shell script.`);
+    }
+    await fs.writeFile(scriptPath, data, { mode: 0o755 });
   }
-  await fs.writeFile(entrypointPath, data, { mode: 0o755 });
 };
 
 export const getServers = async (req: Request, res: Response) => {

@@ -11,6 +11,17 @@ import { getJavaVersionForMinecraft } from "../utils/minecraftJava";
 
 export default function ServerSettings({ serverId, server }: { serverId: string, server: any }) {
   const { isDevPanel } = useSettings();
+  const upperServerType = String(server?.type || "").toUpperCase();
+  const isNodeRuntime = ["NODEJS", "NODE"].includes(upperServerType);
+  const isPythonRuntime = ["PYTHON", "PYTHON3"].includes(upperServerType);
+  const isNonMinecraftRuntime = ["generic", "custom"].includes(server?.eggRuntime)
+    || isNodeRuntime
+    || isPythonRuntime
+    || server?.eggId === "vps-egg"
+    || server?.nestId === "vps";
+  const isMinecraftRuntime = server?.eggRuntime
+    ? server.eggRuntime === "minecraft"
+    : !isNonMinecraftRuntime;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingAction, setIsDeletingAction] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
@@ -39,34 +50,38 @@ export default function ServerSettings({ serverId, server }: { serverId: string,
   
   useEffect(() => {
     // Fetch software versions
-    axios.get(`/api/system/versions?type=${selectedType}`).then((res) => {
-      if (Array.isArray(res.data)) {
-        setVersions(res.data);
-        if (!res.data.includes(selectedVersion)) {
-          setSelectedVersion(res.data[0]);
+    if (isMinecraftRuntime) {
+      axios.get(`/api/system/versions?type=${selectedType}`).then((res) => {
+        if (Array.isArray(res.data)) {
+          setVersions(res.data);
+          if (!res.data.includes(selectedVersion)) {
+            setSelectedVersion(res.data[0]);
+          }
+        } else {
+          setVersions([]);
         }
-      } else {
-        setVersions([]);
-      }
-    }).catch(() => {});
+      }).catch(() => {});
+    }
 
     if ((user?.role === "admin" || user?.role === "owner")) {
       axios.get("/api/auth/users").then(res => {
         setUsers(res.data);
       }).catch(() => {});
     }
-  }, [user, selectedType]);
+  }, [user, selectedType, isMinecraftRuntime]);
 
   // Synchronize recommended Java version whenever selected Minecraft version changes
   useEffect(() => {
     if (selectedVersion) {
-      const autoJava = getJavaVersionForMinecraft(selectedVersion, selectedType);
-      // Auto-update if unset or if switching away from Java 25 (Paper 26.x default)
-      if (!javaVersion || (javaVersion === "25" && !selectedVersion.startsWith("26"))) {
-        setJavaVersion(autoJava);
+      if (isMinecraftRuntime) {
+        const autoJava = getJavaVersionForMinecraft(selectedVersion, selectedType);
+        // Auto-update if unset or if switching away from Java 25 (Paper 26.x default)
+        if (!javaVersion || (javaVersion === "25" && !selectedVersion.startsWith("26"))) {
+          setJavaVersion(autoJava);
+        }
       }
     }
-  }, [selectedVersion, selectedType]);
+  }, [selectedVersion, selectedType, isMinecraftRuntime]);
 
   if (!server) return null;
   const canManage = (user?.role === "admin" || user?.role === "owner") || server.owner === user?.id;
@@ -111,6 +126,17 @@ export default function ServerSettings({ serverId, server }: { serverId: string,
       setIsChangingVersion(false);
     } finally {
       clearInterval(interval);
+    }
+  };
+
+  const handleUpdateGenericRuntime = async () => {
+    setIsChangingVersion(true);
+    try {
+      await axios.put(`/api/servers/${serverId}/runtime`, { dockerImage, startupCommand });
+      window.location.reload();
+    } catch (e: any) {
+      alert(e.response?.data?.error || "Failed to update runtime");
+      setIsChangingVersion(false);
     }
   };
 
@@ -297,10 +323,8 @@ export default function ServerSettings({ serverId, server }: { serverId: string,
             
             {/* RUNTIME CONFIGURATION */}
             {(() => {
-              const upperType = (server?.type || "").toUpperCase();
-              const isGeneric = ["NODEJS", "NODE", "PYTHON", "PYTHON3"].includes(upperType);
-              const isNode = ["NODEJS", "NODE"].includes(upperType);
-              const isPy = ["PYTHON", "PYTHON3"].includes(upperType);
+              const isGeneric = isNodeRuntime || isPythonRuntime;
+              const isNode = isNodeRuntime;
 
               if (isGeneric) {
                 return (
@@ -392,6 +416,52 @@ export default function ServerSettings({ serverId, server }: { serverId: string,
                         </div>
                       </div>
                     )}
+                  </div>
+                );
+              }
+
+              if (!isMinecraftRuntime) {
+                return (
+                  <div className="bg-black/40 dark:bg-black/40 backdrop-blur-xl border border-border p-6 md:p-8 rounded-3xl shadow-[0_0_40px_-15px_rgba(0,0,0,0.5)] ring-1 ring-border-subtle relative z-30 group hover:bg-black/60 transition-colors mb-8">
+                    <h3 className="text-theme-500 font-bold mb-2 flex items-center">
+                      <Sliders className="w-5 h-5 mr-2" /> Runtime Configuration
+                    </h3>
+                    <p className="text-muted-foreground text-sm mb-4">
+                      Configure the Docker image and startup command for this server.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-sm font-medium text-muted-foreground mb-2">Docker Image</label>
+                        <input
+                          type="text"
+                          value={dockerImage}
+                          onChange={e => setDockerImage(e.target.value)}
+                          placeholder="Docker image"
+                          disabled={isChangingVersion}
+                          className="w-full bg-card border border-border focus:border-theme-600 rounded-xl px-4 py-3 text-foreground transition-all outline-none font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-muted-foreground mb-2">Startup Command</label>
+                        <input
+                          type="text"
+                          value={startupCommand}
+                          onChange={e => setStartupCommand(e.target.value)}
+                          placeholder="Startup command"
+                          disabled={isChangingVersion}
+                          className="w-full bg-card border border-border focus:border-theme-600 rounded-xl px-4 py-3 text-foreground transition-all outline-none font-mono text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end mt-4">
+                      <button
+                        onClick={handleUpdateGenericRuntime}
+                        disabled={isChangingVersion}
+                        className="px-6 py-3 bg-theme-600/10 hover:bg-theme-600/20 text-theme-600 font-medium rounded-xl border border-theme-600/20 transition-all disabled:opacity-50 flex items-center min-w-[160px] justify-center h-[50px]"
+                      >
+                        {isChangingVersion ? "Updating..." : "Update Runtime"}
+                      </button>
+                    </div>
                   </div>
                 );
               }
